@@ -4,12 +4,15 @@
 --   1. Central namespace setup, SavedVariables initialization, 5-weight profile
 --      presets (including Skinning & Leatherworking), maxLevelOffset (-3..+5,
 --      default +2), multi-race/class/faction character helpers, shared
---      IsPlayerDeadOrGhost state helper, formatting, event bus, throttled GPS
---      location ticker, trailing-edge event coalescing (deferring loot/skill/
---      subzone bursts off frame 0 without dropping distinct event categories),
---      PLAYER_DEAD / PLAYER_ALIVE / PLAYER_UNGHOST dead/ghost location gating &
---      resurrection resume, TAXIMAP_OPENED change-gated flight-master
---      recording, /fqp gate toggle, /fqp gps stats telemetry, and slash commands.
+--      IsPlayerDeadOrGhost & IsPlayerInGroup state helpers, formatting, event
+--      bus, throttled GPS location ticker, trailing-edge event coalescing
+--      (deferring loot/skill/subzone/group bursts off frame 0 without dropping
+--      distinct event categories), PLAYER_DEAD / PLAYER_ALIVE / PLAYER_UNGHOST
+--      dead/ghost location gating & resurrection resume, change-gated
+--      GROUP_ROSTER_UPDATE / PARTY_MEMBERS_CHANGED / RAID_ROSTER_UPDATE group
+--      tracking (supporting solo elite skipping via toggles.skipEliteSolo),
+--      TAXIMAP_OPENED change-gated flight-master recording, /fqp gate toggle,
+--      /fqp elite toggle, /fqp gps stats telemetry, and slash commands.
 --   2. Must tolerate missing optional addons (TomTom, OpenMap, Questie,
 --      ForeverLevelingBiS) and missing/partial GeneratedData safely.
 --   3. Keep all Lua compatible with WoW Forever 1.60.1 (Lua 5.1 semantics)
@@ -24,7 +27,7 @@ end
 addonName = addonName or "ForeverQuestPath"
 
 ns.name = addonName
-ns.version = "1.0.0"
+ns.version = "1.1.0"
 ns.PREFIX = "|cff33d9ffForeverQuestPath|r: "
 
 _G.ForeverQuestPath = ns
@@ -73,6 +76,7 @@ local DEFAULT_CHAR_DB = {
         dynamicRescore = false,
         consultQuestie = true,
         allowRedQuests = false,
+        skipEliteSolo = true,
     },
     overrideRace = nil,
     overrideClass = nil,
@@ -111,6 +115,7 @@ local dirtySkills = false
 local dirtyTaxi = false
 local dirtyZone = false
 local dirtyZoneReason = nil
+local dirtyGroup = false
 local initialized = false
 local locationTicker = nil
 
@@ -146,6 +151,25 @@ function ns.IsPlayerDeadOrGhost()
         return true
     end
     if UnitIsGhost and UnitIsGhost("player") then
+        return true
+    end
+    return false
+end
+
+function ns.IsPlayerInGroup()
+    if IsInGroup and IsInGroup() then
+        return true
+    end
+    if IsInRaid and IsInRaid() then
+        return true
+    end
+    if GetNumGroupMembers and (GetNumGroupMembers() or 0) > 1 then
+        return true
+    end
+    if GetNumPartyMembers and (GetNumPartyMembers() or 0) > 0 then
+        return true
+    end
+    if GetNumRaidMembers and (GetNumRaidMembers() or 0) > 0 then
         return true
     end
     return false
@@ -443,6 +467,8 @@ local function MarkDirtyRefreshReason(reason)
     elseif reason == "ZONE_CHANGED" or reason == "ZONE_CHANGED_INDOORS" then
         dirtyZone = true
         dirtyZoneReason = reason
+    elseif reason == "GROUP_ROSTER_UPDATE" or reason == "PARTY_MEMBERS_CHANGED" or reason == "RAID_ROSTER_UPDATE" then
+        dirtyGroup = true
     end
 end
 
@@ -453,6 +479,7 @@ local function FlushPendingRefresh()
     local runTaxi = dirtyTaxi
     local runZone = dirtyZone
     local zoneReason = dirtyZoneReason
+    local runGroup = dirtyGroup
     pendingRefresh = false
     dirtyEnterWorld = false
     dirtyQuestLog = false
@@ -460,6 +487,7 @@ local function FlushPendingRefresh()
     dirtyTaxi = false
     dirtyZone = false
     dirtyZoneReason = nil
+    dirtyGroup = false
 
     if not (ns.State and ns.State.Refresh) then
         return
@@ -473,6 +501,7 @@ local function FlushPendingRefresh()
             runQuest = false
             runSkills = false
             runZone = false
+            runGroup = false
         end
         beforeExec = nowExec
     end
@@ -490,6 +519,9 @@ local function FlushPendingRefresh()
         if nowExec > beforeExec then
             runZone = false
         end
+    end
+    if runGroup then
+        ns.State.Refresh("GROUP_ROSTER_UPDATE")
     end
     local isDeadOrGhost = ns.IsPlayerDeadOrGhost()
     local isOnTaxi = (UnitOnTaxi and UnitOnTaxi("player")) and true or false
@@ -754,8 +786,27 @@ function ns.HandleSlashCommand(rawMsg)
             end
             ns.Printf("Gate/transport intermediate waypoints %s.", (ns.db.navGateWaypoints ~= false) and "enabled" or "disabled")
         end
+    elseif cmd == "elite" or cmd == "elites" or cmd == "group" then
+        if ns.charDB and ns.charDB.toggles then
+            local toggles = ns.charDB.toggles
+            local newVal
+            if rest == "on" or rest == "skip" or rest == "solo" or rest == "1" or rest == "true" then
+                newVal = true
+            elseif rest == "off" or rest == "allow" or rest == "show" or rest == "0" or rest == "false" then
+                newVal = false
+            else
+                newVal = not (toggles.skipEliteSolo ~= false)
+            end
+            toggles.skipEliteSolo = newVal
+            if ns.State and ns.State.Refresh then
+                ns.State.Refresh("TOGGLE_skipEliteSolo")
+            end
+            local inGroup = ns.IsPlayerInGroup and ns.IsPlayerInGroup() or false
+            ns.Print("Skip Elite (Solo): " .. (newVal and "ON" or "OFF")
+                .. (inGroup and " (currently IN GROUP - elite quests included)" or " (currently SOLO)"))
+        end
     else
-        ns.Print("Commands: /fqp (window), /fqp hud, /fqp pin, /fqp gate [on|off], /fqp gps [on|off|toggle|stats], /fqp skip, /fqp back, /fqp reset, /fqp dungeons, /fqp rewards, /fqp maxlevel <-3..+5>, /fqp char <auto|race class>, /fqp profile <balanced|skinning_lw|dungeon_focus|treasure_bags|fast_xp>")
+        ns.Print("Commands: /fqp (window), /fqp hud, /fqp pin, /fqp elite [on|off|toggle], /fqp gate [on|off], /fqp gps [on|off|toggle|stats], /fqp skip, /fqp back, /fqp reset, /fqp dungeons, /fqp rewards, /fqp maxlevel <-3..+5>, /fqp char <auto|race class>, /fqp profile <balanced|skinning_lw|dungeon_focus|treasure_bags|fast_xp>")
     end
 end
 
@@ -790,6 +841,9 @@ if CreateFrame then
         "PLAYER_DEAD",
         "PLAYER_ALIVE",
         "PLAYER_UNGHOST",
+        "GROUP_ROSTER_UPDATE",
+        "PARTY_MEMBERS_CHANGED",
+        "RAID_ROSTER_UPDATE",
     }
     for _, ev in ipairs(events) do
         pcall(eventFrame.RegisterEvent, eventFrame, ev)
@@ -835,6 +889,12 @@ if CreateFrame then
         elseif event == "QUEST_LOG_UPDATE" or event == "SKILL_LINES_CHANGED" or event == "CHAT_MSG_SKILL" then
             if initialized then
                 ScheduleRefresh(event, false)
+            end
+        elseif event == "GROUP_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+            if initialized then
+                if not (ns.State and ns.State.HasGroupStatusChanged) or ns.State.HasGroupStatusChanged() then
+                    ScheduleRefresh(event, false)
+                end
             end
         elseif event == "TAXIMAP_OPENED" then
             if initialized and (not ns.IsPlayerDeadOrGhost()) and not (UnitOnTaxi and UnitOnTaxi("player"))

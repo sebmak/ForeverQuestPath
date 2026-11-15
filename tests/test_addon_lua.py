@@ -72,8 +72,14 @@ def _run_luajit(script: str) -> tuple[int, str, str]:
 #   Spirit-Healer rez immediate resume + deadLocationSkipped stats), deep requirements audit (/reload
 #   while dead in dynamic/custom mode via deadBootLocation, MaxLevelOffset custom -1 preservation
 #   across Allow Red +5 checkbox toggles, off-DB QuestieDB ready turn-ins in dynamic mode, and
-#   1500-completed-quest allocation & latency budgets), AddonCompartment, waypoints, and byte-for-
-#   byte sync.
+#   deep requirements audit (/reload while dead in dynamic/custom mode via deadBootLocation,
+#   MaxLevelOffset custom -1 preservation across Allow Red +5 checkbox toggles, off-DB QuestieDB
+#   ready turn-ins in dynamic mode, and 1500-completed-quest allocation & latency budgets),
+#   skipEliteSolo option (enabled by default, open-world elite deferral in deferredSteps +
+#   HasEliteDeferredPrereq, excluding dungeons and ready elite turn-ins, live group/raid roster
+#   boolean-change gating via GROUP_ROSTER_UPDATE / PARTY_MEMBERS_CHANGED / RAID_ROSTER_UPDATE,
+#   /fqp elite command, and synchronized Route + Settings "Skip Elite (Solo)" checkboxes),
+#   AddonCompartment, waypoints, and byte-for-byte sync.
 class TestForeverQuestPathAddon(unittest.TestCase):
     """Lua 5.1 / WoW Forever 16001 harness tests for ForeverQuestPath addon."""
 
@@ -1717,15 +1723,28 @@ Mock.AdvanceTimers(2.0)
 local cRed, mRed = ns.State.GetCurrentStep()
 assert(cRed and cRed.questId == 20 and mRed.source == "friend_pivot",
     "Expected Redridge friend chain pivot on COMPLETE 20")
-local saw20Turnin, sawRedFollowup = false, false
-for _, st in ipairs(ns.State.GetUpcomingSteps(12)) do
+local saw20Turnin, saw98387Solo, sawEliteRedSolo = false, false, false
+for _, st in ipairs(ns.State.GetUpcomingSteps(25)) do
     if st.questId == 20 and st.action == "TURN_IN" then saw20Turnin = true end
-    if st.questId == 98387 or st.questId == 19 or st.questId == 115 then sawRedFollowup = true end
+    if st.questId == 98387 then saw98387Solo = true end
+    if st.questId == 19 or st.questId == 115 then sawEliteRedSolo = true end
     if st.action ~= "TRAVEL" then
-        assert(st.zoneId == 44, "Redridge friend chain must stay in zoneId=44, got " .. tostring(st.zoneId))
+        assert(st.zoneId == 44 or st.questId == 281 or st.questId == 284 or st.questId == 285 or st.questId == 286 or st.questId == 98189,
+            "Unexpected zone in Redridge upcoming list: " .. tostring(st.zoneId))
     end
 end
-assert(saw20Turnin and sawRedFollowup, "Expected Redridge friend chain TURN_IN 20 + follow-ups proactively expanded")
+assert(saw20Turnin and saw98387Solo and (not sawEliteRedSolo),
+    "Expected Redridge solo friend chain to expand TURN_IN 20 + 98387 while excluding elite follow-ups 19/115")
+
+Mock.SetGroup(true, 2, false, true)
+Mock.AdvanceTimers(0.5)
+local sawEliteRedGroup = false
+for _, st in ipairs(ns.State.GetUpcomingSteps(25)) do
+    if st.questId == 19 or st.questId == 115 then sawEliteRedGroup = true end
+end
+assert(sawEliteRedGroup, "Expected Redridge elite follow-ups 19/115 to expand proactively once grouped")
+Mock.SetGroup(false, 0, false, true)
+Mock.AdvanceTimers(0.5)
 
 -- 4. Allocation-free cached performance guard (< 20ms tab switches, 0 CreateFrame/CreateRegion calls)
 Mock.ResetMetrics()
@@ -2764,6 +2783,326 @@ print(string.format("DEEP_AUDIT_PERF_OK gp=%.2fms/%.1fKB gps=%.2fms pair=%.2fms 
         rc, out, err = _run_luajit(lua_script)
         self.assertEqual(rc, 0, f"Deep audit & performance test failed:\nSTDOUT: {out}\nSTDERR: {err}")
         self.assertIn("DEEP_AUDIT_PERF_OK", out)
+
+    def test_skip_elite_quests_unless_grouped(self) -> None:
+        lua_script = f"""
+local Mock = dofile({str(WOW_MOCK_LUA)!r})
+
+local function findStepIndex(steps, questId, action)
+    for i, st in ipairs(steps or {{}}) do
+        if st.questId == questId and (action == nil or (st.action or "ACCEPT") == action) then
+            return i
+        end
+    end
+    return nil
+end
+
+local function stepInList(list, questId, action)
+    for _, st in ipairs(list or {{}}) do
+        if st and st.questId == questId and (action == nil or (st.action or "ACCEPT") == action) then
+            return true, st
+        end
+    end
+    return false, nil
+end
+
+-- ============================================================================
+-- Part A: Default solo skipEliteSolo, Elwynn Q176 deferral, Nav/Scorer/Window
+-- ============================================================================
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Lightshield",
+    realm = "Forever",
+    level = 11,
+    raceName = "Human",
+    raceFile = "Human",
+    raceId = 1,
+    className = "Paladin",
+    classFile = "PALADIN",
+    classId = 2,
+    faction = "Alliance",
+    mapId = 1429,
+    x = 0.246,
+    y = 0.747,
+}})
+
+local addonName, ns = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonName)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+
+assert(ns.charDB and ns.charDB.toggles and ns.charDB.toggles.skipEliteSolo == true,
+    "Expected skipEliteSolo to default to true")
+local pSolo = ns.State.GetPlayerInfo()
+assert(pSolo and pSolo.inGroup == false, "Expected player.inGroup == false while solo")
+assert(ns.State.ShouldSkipEliteNow(pSolo, ns.charDB.toggles) == true,
+    "Expected ShouldSkipEliteNow() == true while solo with default toggle")
+local vmSolo = ns.HUD.GetViewModel()
+assert(vmSolo and vmSolo.modeLabel and vmSolo.modeLabel:find("No Elite", 1, true),
+    "Expected HUD modeLabel to include 'No Elite' when solo & skipEliteSolo=true, got " .. tostring(vmSolo and vmSolo.modeLabel))
+
+-- Q176 (WANTED: Hogger) is open-world elite
+assert(ns.State.IsQuestElite(176) == true, "Expected Q176 (WANTED: Hogger) to be classified as open-world elite")
+local bCode176, bReason176 = ns.State.GetQuestBlockReason(176)
+assert(bCode176 == "elite_solo", "Expected GetQuestBlockReason(176) == 'elite_solo', got " .. tostring(bCode176))
+
+-- Dungeon quests must NEVER be classified as open-world elite or blocked by elite_solo
+assert(ns.State.IsQuestElite(166) == false, "Expected dungeon quest 166 not to be classified as open-world elite")
+assert(ns.State.IsQuestElite(96394) == false, "Expected dungeon quest 96394 not to be classified as open-world elite")
+
+local stepsA, _, pkeyA = ns.State.GetActiveProfileSteps()
+local idxAcc176 = findStepIndex(stepsA, 176, "ACCEPT")
+local idxComp176 = findStepIndex(stepsA, 176, "COMPLETE")
+local idxTurn176 = findStepIndex(stepsA, 176, "TURN_IN")
+assert(idxAcc176 and idxComp176 and idxTurn176, "Expected Q176 ACCEPT/COMPLETE/TURN_IN steps in Human starter route")
+
+-- Mark 433 complete so step 114 doesn't confuse cursor jumps
+Mock.CompleteQuest(433)
+ns.State.JumpToStep(idxAcc176)
+local curAfterJump, _ = ns.State.GetCurrentStep()
+assert(curAfterJump and curAfterJump.questId ~= 176,
+    "Expected solo cursor to skip past ACCEPT 176, landed on " .. tostring(curAfterJump and curAfterJump.questId))
+local defMapA = ns.charDB.deferredSteps and ns.charDB.deferredSteps[pkeyA]
+local skipMapA = ns.charDB.skippedSteps and ns.charDB.skippedSteps[pkeyA]
+assert(defMapA and defMapA[idxAcc176] == true, "Expected idxAcc176 recorded in deferredSteps while solo")
+local kAcc176 = ns.State.GetStepKey(stepsA[idxAcc176], idxAcc176, pkeyA)
+assert(not (skipMapA and (skipMapA[idxAcc176] or skipMapA[kAcc176])),
+    "Expected deferred elite step NOT to be marked in skippedSteps")
+
+-- Route tab remaining filter hides/blocks Q176 while solo and unaccepted
+ns.Window.ShowTab("route")
+local snapSolo = ns.Window.GetSnapshot()
+assert(snapSolo.skipEliteSolo == true and snapSolo.inGroup == false, "Window snapshot mismatch for skipEliteSolo/inGroup")
+for _, row in ipairs(snapSolo.routeRows or {{}}) do
+    local st = row and row.step
+    if st and st.questId == 176 and (not row.isBlocked) then
+        error("Expected Window remaining routeRows not to show unblocked Q176 while solo")
+    end
+end
+
+-- Nav.FindNearestEligibleQuests & Scorer.GetDynamicSteps exclude unaccepted Q176 while solo
+local nearSolo, nearSoloN = ns.Nav.FindNearestEligibleQuests(12, 0.246, 0.747, ns.GetData(), ns.State.GetPlayerInfo(), {{
+    maxSec = 1800,
+    maxResults = 60,
+    noCap = true,
+}})
+assert((nearSoloN or 0) > 0, "Expected Nav nearest eligible quests in Elwynn Forest")
+for i = 1, nearSoloN do
+    assert(nearSolo[i].questId ~= 176, "Expected Nav.FindNearestEligibleQuests to exclude Q176 while solo")
+end
+local dynSolo = ns.Scorer.GetDynamicSteps(ns.State.GetPlayerInfo(), ns.GetActiveWeights(), ns.charDB.toggles, 30)
+local has176DynSolo = stepInList(dynSolo, 176, nil)
+assert(not has176DynSolo, "Expected Scorer.GetDynamicSteps to exclude Q176 while solo")
+
+-- ============================================================================
+-- Part B: Party & Raid auto-unlock, Re-deferral on leave, Roster churn CPU guard
+-- ============================================================================
+Mock.SetGroup(true, 2, false, true)
+Mock.AdvanceTimers(0.5)
+local pParty = ns.State.GetPlayerInfo()
+assert(pParty.inGroup == true, "Expected player.inGroup == true in party")
+assert(ns.State.ShouldSkipEliteNow(pParty, ns.charDB.toggles) == false, "Expected ShouldSkipEliteNow == false when grouped")
+local curParty, metaParty = ns.State.GetCurrentStep()
+assert(metaParty and metaParty.stepIndex == idxAcc176,
+    "Expected joining party to rewind route cursor stepIndex to idxAcc176 (" .. tostring(idxAcc176) .. "), got " .. tostring(metaParty and metaParty.stepIndex))
+assert(curParty and curParty.questId == 176 and curParty.action == "ACCEPT",
+    "Expected joining party at (24.6, 74.7) to surface ACCEPT 176, got " .. tostring(curParty and curParty.questId) .. " " .. tostring(curParty and curParty.action))
+local vmParty = ns.HUD.GetViewModel()
+assert(vmParty.modeLabel:find("Grouped", 1, true), "Expected HUD modeLabel 'Grouped' in party, got " .. tostring(vmParty.modeLabel))
+assert(vmParty.current and vmParty.current.badgesLine and vmParty.current.badgesLine:find("[Elite]", 1, true),
+    "Expected HUD badgesLine '[Elite]' for Q176, got " .. tostring(vmParty.current and vmParty.current.badgesLine))
+local dynParty = ns.Scorer.GetDynamicSteps(pParty, ns.GetActiveWeights(), ns.charDB.toggles, 40)
+assert(stepInList(dynParty, 176, "ACCEPT"), "Expected Scorer.GetDynamicSteps to include ACCEPT 176 when grouped")
+
+-- Roster churn while remaining grouped (member count 2 -> 3 -> 4 -> 5) must trigger 0 refreshes
+ns.State.ResetIdlePerfStats()
+local statsChurnBefore = ns.State.GetIdlePerfStats()
+local genChurnBefore = ns.State.GetQuestStateGeneration()
+for i = 1, 20 do
+    Mock.SetGroup(true, 2 + (i % 4), false, true)
+    Mock.AdvanceTimers(0.3)
+end
+local statsChurnAfter = ns.State.GetIdlePerfStats()
+assert(statsChurnAfter.refreshExecuted == statsChurnBefore.refreshExecuted,
+    string.format("Expected 0 refreshes on inGroup-unchanged roster churn, got %d",
+        statsChurnAfter.refreshExecuted - statsChurnBefore.refreshExecuted))
+assert(ns.State.GetQuestStateGeneration() == genChurnBefore,
+    "Expected quest generation unchanged across group roster noise")
+
+-- Leave party -> incomplete elite is re-deferred and cursor skips past ACCEPT 176 again
+Mock.SetGroup(false, 0, false, true)
+Mock.AdvanceTimers(0.5)
+local curLeft, _ = ns.State.GetCurrentStep()
+assert(curLeft and curLeft.questId ~= 176, "Expected leaving group to re-defer Q176")
+
+-- Join raid -> inGroup=true again and cursor rewinds to ACCEPT 176
+Mock.SetGroup(true, 10, true, true)
+Mock.AdvanceTimers(0.5)
+local pRaid = ns.State.GetPlayerInfo()
+assert(pRaid.inGroup == true, "Expected player.inGroup == true in raid")
+local curRaid, _ = ns.State.GetCurrentStep()
+assert(curRaid and curRaid.questId == 176 and curRaid.action == "ACCEPT",
+    "Expected joining raid to unlock and rewind to ACCEPT 176")
+Mock.SetGroup(false, 0, false, true)
+Mock.AdvanceTimers(0.5)
+
+-- ============================================================================
+-- Part C: Active incomplete elite skipped vs Ready elite TURN_IN preserved solo
+-- ============================================================================
+Mock.AcceptQuest(176, "WANTED: \\"Hogger\\"", 11, false, "Elite")
+Mock.AcceptQuest(999901, "Custom Off-DB Elite Hunt", 11, false, "Elite")
+Mock.AdvanceTimers(0.5)
+assert(ns.State.IsQuestElite(999901) == true, "Expected off-DB QuestLog 'Elite' tag quest 999901 to be classified elite")
+local curIncElite, _ = ns.State.GetCurrentStep()
+assert(not (curIncElite and (curIncElite.questId == 176 or curIncElite.questId == 999901)),
+    "Expected incomplete active elite quests not to be recommended for COMPLETE while solo")
+local dynInc = ns.Scorer.GetDynamicSteps(ns.State.GetPlayerInfo(), ns.GetActiveWeights(), ns.charDB.toggles, 40)
+assert(not stepInList(dynInc, 176, "COMPLETE"), "Expected Scorer to omit incomplete COMPLETE 176 while solo")
+assert(not stepInList(dynInc, 999901, "COMPLETE"), "Expected Scorer to omit incomplete off-DB COMPLETE 999901 while solo")
+
+-- Complete Q176 objectives while STILL solo + skipEliteSolo=true -> ready TURN_IN 176 MUST NOT be skipped!
+Mock.SetQuestObjectivesComplete(176, true)
+Mock.AdvanceTimers(0.5)
+local readyList = ns.State.GetReadyTurnInQuests()
+assert(stepInList(readyList, 176, nil), "Expected completed elite Q176 in GetReadyTurnInQuests while solo")
+Mock.SetPlayerPosition(1429, 0.421, 0.659, "Goldshire", false)
+Mock.AdvanceTimers(2.0)
+local curReadySolo, metaReadySolo = ns.State.GetCurrentStep()
+assert(curReadySolo and curReadySolo.questId == 176 and curReadySolo.action == "TURN_IN",
+    "Expected ready elite TURN_IN 176 to be recommended even while solo, got " .. tostring(curReadySolo and curReadySolo.questId) .. " " .. tostring(curReadySolo and curReadySolo.action))
+local vmReady = ns.HUD.GetViewModel()
+assert(vmReady.current and vmReady.current.actionText:find("Ready Turn-In", 1, true),
+    "Expected HUD actionText '[Ready Turn-In]' for completed solo elite quest")
+assert(vmReady.current.badgesLine and vmReady.current.badgesLine:find("[Elite]", 1, true),
+    "Expected HUD badgesLine '[Elite]' on ready elite turn-in")
+local dynReady = ns.Scorer.GetDynamicSteps(ns.State.GetPlayerInfo(), ns.GetActiveWeights(), ns.charDB.toggles, 30)
+assert(stepInList(dynReady, 176, "TURN_IN"), "Expected Scorer.GetDynamicSteps to preserve ready TURN_IN 176 while solo")
+
+-- ============================================================================
+-- Part D: Slash commands (/fqp elite), both UI checkboxes, 0 Frame leaks
+-- ============================================================================
+-- Clean 176 complete so cursor tests cleanly reflect ACCEPT 176 gating
+Mock.TurnInQuest(176, 850, 400)
+Mock.AdvanceTimers(0.5)
+
+-- Jump to Lv30 Wetlands scenario in same harness using Mock.Reset for pristine Q631->Q632 prereq chain + /fqp elite
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Sprocketstab",
+    realm = "Forever",
+    level = 30,
+    raceName = "Gnome",
+    raceFile = "Gnome",
+    raceId = 7,
+    className = "Rogue",
+    classFile = "ROGUE",
+    classId = 4,
+    faction = "Alliance",
+    mapId = 1437,
+    x = 0.50,
+    y = 0.25,
+}})
+local addonName2, ns2 = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonName2)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+
+-- Verify Lv30 dungeon quest Q96394 is NEVER blocked with elite_solo while solo
+local dc96394 = ns2.State.GetQuestBlockReason(96394)
+assert(dc96394 ~= "elite_solo", "Dungeon quest 96394 must never be blocked with 'elite_solo', got " .. tostring(dc96394))
+local stepsB, _, pkeyB = ns2.State.GetActiveProfileSteps()
+local idxDungRun = findStepIndex(stepsB, 96394, "DUNGEON_RUN")
+if idxDungRun then
+    local dbCode = ns2.State.IsStepBlocked(stepsB[idxDungRun], stepsB, idxDungRun, ns2.State.GetPlayerInfo(), pkeyB, nil, nil, ns2.charDB.toggles)
+    assert(dbCode ~= "elite_solo", "DUNGEON_RUN step must never be blocked with 'elite_solo'")
+end
+
+-- Test elite chain prereq deferral: Q631 (elite, 986) -> Q632 (non-elite, prereq 631, 988)
+local idxAcc631 = findStepIndex(stepsB, 631, "ACCEPT")
+local idxTurn631 = findStepIndex(stepsB, 631, "TURN_IN")
+local idxAcc632 = findStepIndex(stepsB, 632, "ACCEPT")
+local idxTurn632 = findStepIndex(stepsB, 632, "TURN_IN")
+assert(idxAcc631 and idxTurn631 and idxAcc632 and idxTurn632, "Expected Q631/Q632 chain steps in balanced route")
+
+ns2.State.JumpToStep(idxAcc631)
+local curChainSolo, _ = ns2.State.GetCurrentStep()
+assert(curChainSolo and curChainSolo.questId ~= 631 and curChainSolo.questId ~= 632,
+    "Expected solo cursor jumping to elite Q631 to also skip prereq-locked follow-up Q632, landed on " .. tostring(curChainSolo and curChainSolo.questId))
+local defB = ns2.charDB.deferredSteps and ns2.charDB.deferredSteps[pkeyB]
+local skipB = ns2.charDB.skippedSteps and ns2.charDB.skippedSteps[pkeyB]
+assert(defB and defB[idxAcc631] == true and defB[idxTurn631] == true and defB[idxAcc632] == true and defB[idxTurn632] == true,
+    "Expected Q631 and prereq-locked follow-up Q632 steps all recorded in deferredSteps")
+for _, checkIdx in ipairs({{ idxAcc631, idxTurn631, idxAcc632, idxTurn632 }}) do
+    local kC = ns2.State.GetStepKey(stepsB[checkIdx], checkIdx, pkeyB)
+    assert(not (skipB and (skipB[checkIdx] or skipB[kC])), "Expected deferred elite/prereq step not to be in skippedSteps")
+end
+
+-- /fqp elite off while STILL solo unlocks deferred Q631 immediately and rewinds cursor!
+Mock.RunSlash("/fqp", "elite off")
+assert(ns2.Window.GetSnapshot().skipEliteSolo == false, "Expected /fqp elite off to set skipEliteSolo=false")
+local vmOff = ns2.HUD.GetViewModel()
+assert(vmOff.modeLabel:find("Elite All", 1, true), "Expected HUD modeLabel 'Elite All' when solo & skipEliteSolo=false, got " .. tostring(vmOff.modeLabel))
+local curEliteOff, _ = ns2.State.GetCurrentStep()
+assert(curEliteOff and curEliteOff.questId == 631 and curEliteOff.action == "ACCEPT",
+    "Expected /fqp elite off while solo to unlock & rewind cursor to ACCEPT 631, got " .. tostring(curEliteOff and curEliteOff.questId))
+
+-- /fqp elite on re-defers Q631 + Q632
+Mock.RunSlash("/fqp", "elite on")
+assert(ns2.Window.GetSnapshot().skipEliteSolo == true, "Expected /fqp elite on to set skipEliteSolo=true")
+local curEliteOn, _ = ns2.State.GetCurrentStep()
+assert(curEliteOn and curEliteOn.questId ~= 631 and curEliteOn.questId ~= 632,
+    "Expected /fqp elite on while solo to re-defer Q631 & Q632")
+
+-- Find both "Skip Elite (Solo)" checkboxes (Route tab + Settings/Diag tab) and verify sync + 0 allocations
+local win2 = Mock.FindFrameByName("ForeverQuestPathWindow")
+local eliteChks = {{}}
+local function collectEliteChecks(frame)
+    if frame and frame.label and frame.label.GetText then
+        local txt = frame.label:GetText()
+        if txt and txt:find("Skip Elite (Solo)", 1, true) then
+            eliteChks[#eliteChks + 1] = frame
+        end
+    end
+    for _, ch in ipairs((frame and frame._children) or {{}}) do
+        collectEliteChecks(ch)
+    end
+end
+ns2.Window.ShowTab("route")
+ns2.Window.ShowTab("diag")
+collectEliteChecks(win2)
+assert(#eliteChks == 2, "Expected 2 'Skip Elite (Solo)' checkboxes (Route + Diag tabs), found " .. tostring(#eliteChks))
+assert(eliteChks[1].checked == true and eliteChks[2].checked == true,
+    "Expected both Skip Elite (Solo) checkboxes initially checked")
+
+Mock.ResetMetrics()
+ns2.Window.ShowTab("route")
+eliteChks[1]:Click()
+assert(ns2.Window.GetSnapshot().skipEliteSolo == false, "Clicking Route Skip Elite checkbox should disable skipEliteSolo")
+assert(eliteChks[1].checked == false and eliteChks[2].checked == false,
+    "Both Skip Elite (Solo) checkboxes should sync to false after Route tab click")
+assert(ns2.State.GetCurrentStep().questId == 631, "Disabling via Route checkbox should rewind cursor to Q631")
+
+ns2.Window.ShowTab("diag")
+eliteChks[2]:Click()
+assert(ns2.Window.GetSnapshot().skipEliteSolo == true, "Clicking Settings/Diag Skip Elite checkbox should re-enable skipEliteSolo")
+assert(eliteChks[1].checked == true and eliteChks[2].checked == true,
+    "Both Skip Elite (Solo) checkboxes should sync to true after Diag tab click")
+assert(ns2.State.GetCurrentStep().questId ~= 631, "Re-enabling via Diag checkbox should re-defer Q631")
+
+Mock.RunSlash("/fqp", "elite toggle")
+assert(ns2.Window.GetSnapshot().skipEliteSolo == false, "Expected /fqp elite toggle to flip skipEliteSolo to false")
+Mock.RunSlash("/fqp", "elite toggle")
+assert(ns2.Window.GetSnapshot().skipEliteSolo == true, "Expected /fqp elite toggle to flip skipEliteSolo back to true")
+
+local m2 = Mock.GetMetrics()
+assert(m2.createFrameCalls == 0, "Expected 0 CreateFrame calls during Skip Elite UI/slash/group transitions, got " .. tostring(m2.createFrameCalls))
+assert(m2.createRegionCalls == 0, "Expected 0 CreateRegion calls during Skip Elite UI/slash/group transitions, got " .. tostring(m2.createRegionCalls))
+assert(#Mock.errors == 0, "Unexpected Lua errors in skip-elite test: " .. table.concat(Mock.errors, "; "))
+print("SKIP_ELITE_UNLESS_GROUPED_OK")
+"""
+        rc, out, err = _run_luajit(lua_script)
+        self.assertEqual(rc, 0, f"Skip elite unless grouped test failed:\nSTDOUT: {out}\nSTDERR: {err}")
+        self.assertIn("SKIP_ELITE_UNLESS_GROUPED_OK", out)
 
     def test_deployed_addon_matches_source_directory(self) -> None:
         self.assertTrue(ADDON_DST.exists(), f"Installed addon directory missing: {ADDON_DST}")

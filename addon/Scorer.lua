@@ -12,11 +12,20 @@
 --      classScores, indexes) plus live/overridden character state, user
 --      slider weights/toggles, QuestieDB turn-in fallbacks via State, and
 --      configurable maxLevelOffset (-3..+5, default +2), bounding QuestieDB
---      IsDoable checks and memoizing read views per generation plus step-1
---      isLiveState / seedQids / dynamicStepsCache with metatable vCompleted.
+--      IsDoable checks, memoizing static GetDungeonUnlockInfo results in
+--      dungeonUnlockMemo (preserved across non-static InvalidateCaches), reusing
+--      pooled scorerScratch (metricsPool, rawCandidates, seenCand, readyPoints,
+--      readyExtras, peerCountByQid, recentChainSet, simChainSet,
+--      activeChainSet, readyCtx), using maxCandidates = 1 + fromLiveSeed
+--      IsIndexedEligible fast path + O(N) top-1 selection on lookahead steps,
+--      and memoizing read views per generation plus step-1 isLiveState /
+--      seedQids / dynamicStepsCache with metatable vCompleted.
 --   3. Ready turn-ins in active log are never blocked by eligibility, exclusive
---      lists, or level offset checks; pure scoring functions must never mutate
---      live SavedVariables or game state.
+--      lists, elite-solo gating, or level offset checks; open-world elite
+--      quests (incomplete active or available) are skipped when skipEliteNow
+--      is true (toggles.skipEliteSolo ~= false and solo), while dungeon quests
+--      remain unaffected; pure scoring functions must never mutate live
+--      SavedVariables or game state.
 --   4. Travel estimates and dynamic candidate selection plug into ns.Nav
 --      (terrain/road/gate Bidirectional Dijkstra + frontier nodeToEligible
 --      search, with bounded skipIndexRebuild=true lookahead steps) when
@@ -55,9 +64,12 @@ local LIVE_NAV_OPTS = { maxResults = 75, maxSec = 2400.0, keepFullField = true }
 local LOOKAHEAD_NAV_OPTS = { maxResults = 36, maxSec = 1800.0, keepFullField = false, skipIndexRebuild = true }
 local FAST_BLOCK_OPTS = { consultQuestie = false, checkIsDoable = false, useBulkCompletion = true, reasonless = true }
 local LIVE_BLOCK_OPTS = { consultQuestie = true, checkIsDoable = true, useBulkCompletion = true, reasonless = true }
+local UNMOUNTED_NAV_OPTS = { unmountedOnly = true }
 
 local cachedIndexDataRef = nil
 local fallbackIndexes = nil
+local cachedDungeonDataRef = nil
+local dungeonUnlockMemo = {}
 local dungeonsViewCache = {}
 local rewardsViewCache = {}
 local rankLiveCache = {
@@ -72,6 +84,46 @@ local dynamicStepsCache = {
     steps = nil,
     requestedCount = 0,
 }
+local scorerScratch = {
+    metricsPool = {},
+    rawCandidates = {},
+    seenCand = {},
+    seenList = {},
+    readyPointPool = {},
+    readyPoints = {},
+    readyExtras = {},
+    peerCountByQid = {},
+    recentChainSet = {},
+    simChainSet = {},
+    activeChainSet = {},
+    readyCtx = {},
+}
+
+local wipeOk, tableClearFn = pcall(require, "table.clear")
+if not wipeOk then
+    tableClearFn = nil
+end
+
+local function WipeMap(t)
+    if not t then return end
+    if _G.wipe then
+        _G.wipe(t)
+    elseif tableClearFn then
+        tableClearFn(t)
+    else
+        for k in pairs(t) do
+            t[k] = nil
+        end
+    end
+    return t
+end
+
+local function CompareCandidateMetrics(a, b)
+    if math.abs(a.score - b.score) > 0.001 then
+        return a.score > b.score
+    end
+    return (a.quest.id or 0) < (b.quest.id or 0)
+end
 
 local function EnsureIndexes(data)
     data = data or ns.GetData()
@@ -188,9 +240,13 @@ local function EnsureIndexes(data)
     return fallbackIndexes
 end
 
-function Scorer.InvalidateCaches()
-    cachedIndexDataRef = nil
-    fallbackIndexes = nil
+function Scorer.InvalidateCaches(clearStatic)
+    if clearStatic == true then
+        cachedIndexDataRef = nil
+        fallbackIndexes = nil
+        cachedDungeonDataRef = nil
+        dungeonUnlockMemo = {}
+    end
     dungeonsViewCache = {}
     rewardsViewCache = {}
     rankLiveCache.valid = false
@@ -291,9 +347,31 @@ function Scorer.EstimateTravelMinutes(fromZoneId, fromX, fromY, toZoneId, toX, t
 end
 
 function Scorer.GetDungeonUnlockInfo(questId, playerLevel, data)
-    data = data or ns.GetData()
+    local liveData = ns.GetData()
+    data = data or liveData
+    local useMemo = (data == liveData and type(questId) == "number" and type(playerLevel) == "number")
+    local lvMemo = nil
+    if useMemo then
+        if cachedDungeonDataRef ~= data then
+            cachedDungeonDataRef = data
+            dungeonUnlockMemo = {}
+        end
+        lvMemo = dungeonUnlockMemo[playerLevel]
+        if lvMemo then
+            local cached = lvMemo[questId]
+            if cached ~= nil then
+                return cached or nil
+            end
+        else
+            lvMemo = {}
+            dungeonUnlockMemo[playerLevel] = lvMemo
+        end
+    end
     local dungeonIds = ns.State.GetQuestDungeons(questId)
     if not dungeonIds or #dungeonIds == 0 then
+        if useMemo then
+            lvMemo[questId] = false
+        end
         return nil
     end
 
@@ -342,6 +420,9 @@ function Scorer.GetDungeonUnlockInfo(questId, playerLevel, data)
         end
     end
 
+    if useMemo then
+        lvMemo[questId] = bestInfo or false
+    end
     return bestInfo
 end
 
@@ -366,7 +447,7 @@ local function HasEligibleFollowup(q, vState, data)
     return false
 end
 
-local function ComputeCandidateMetrics(q, action, vState, weights, toggles, data, readyCtx)
+local function ComputeCandidateMetrics(q, action, vState, weights, toggles, data, readyCtx, outSlot)
     local level = vState.level or 24
     local effAction = action
     if q.isDungeon and action == "ACCEPT" then
@@ -509,39 +590,39 @@ local function ComputeCandidateMetrics(q, action, vState, weights, toggles, data
         + wSkin * skinningNorm
     ) / wSum
 
-    return {
-        quest = q,
-        rawAction = action,
-        effAction = effAction,
-        score = weighted + momentum,
-        level = level,
-        pt = pt,
-        targetZoneId = targetZoneId,
-        targetX = targetX,
-        targetY = targetY,
-        travelMins = travelMins,
-        estMins = estMins,
-        effXp = effXp,
-        xpPct = xpPct,
-        xpNorm = xpNorm,
-        travelPenalty = travelPenalty,
-        dungeonInfo = dungeonInfo,
-        dungeonNorm = dungeonNorm,
-        goldCopper = goldCopper,
-        bagSlots = bagSlots,
-        classScore = classScore,
-        className = className,
-        classFile = classFile,
-        rogueScore = rogueScore,
-        rewardNorm = rewardNorm,
-        skinScore = skinScore,
-        isLW = isLW,
-        isSkin = isSkin,
-        skinningNorm = skinningNorm,
-        readyPeerCount = readyPeerCount,
-        hasFollowup = hasFollowup,
-        isFriendChain = isFriendChain,
-    }
+    local out = outSlot or {}
+    out.quest = q
+    out.rawAction = action
+    out.effAction = effAction
+    out.score = weighted + momentum
+    out.level = level
+    out.pt = pt
+    out.targetZoneId = targetZoneId
+    out.targetX = targetX
+    out.targetY = targetY
+    out.travelMins = travelMins
+    out.estMins = estMins
+    out.effXp = effXp
+    out.xpPct = xpPct
+    out.xpNorm = xpNorm
+    out.travelPenalty = travelPenalty
+    out.dungeonInfo = dungeonInfo
+    out.dungeonNorm = dungeonNorm
+    out.goldCopper = goldCopper
+    out.bagSlots = bagSlots
+    out.classScore = classScore
+    out.className = className
+    out.classFile = classFile
+    out.rogueScore = rogueScore
+    out.rewardNorm = rewardNorm
+    out.skinScore = skinScore
+    out.isLW = isLW
+    out.isSkin = isSkin
+    out.skinningNorm = skinningNorm
+    out.readyPeerCount = readyPeerCount
+    out.hasFollowup = hasFollowup
+    out.isFriendChain = isFriendChain
+    return out
 end
 
 local function MaterializeCandidate(m, vState, data)
@@ -714,6 +795,7 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
         local qy = vState.y and math.floor(vState.y * 0.5) or -1
         local hReady = (ns.Nav and ns.Nav.IsHearthReady and ns.Nav.IsHearthReady()) and 1 or 0
         local hasQdb = (_G.QuestieDB ~= nil or _G.QuestieLoader ~= nil) and 1 or 0
+        local rankSkipElite = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(vp, toggles) or (toggles.skipEliteSolo ~= false and not (vp and vp.inGroup))
         rankLiveKey = string.format(
             "%d:%d:%d:%d:%s:%d:%d:%d:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%d:%s:%s:%d:%d:%d:%d",
             gen, sGen, pLevel, maxOffset, tostring(vState.zoneId or 0), qx, qy, cap,
@@ -734,7 +816,7 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             hReady,
             hasQdb,
             #((ns.State.GetBlockedSteps and ns.State.GetBlockedSteps()) or {}),
-            0
+            rankSkipElite and 1 or 0
         ) .. "|" .. readySig .. "|" .. locSig
         if rankLiveCache.valid and rankLiveCache.key == rankLiveKey and rankLiveCache.out then
             if vState and rankLiveCache.seedQids then
@@ -748,7 +830,9 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
     local skipped = cdb.skippedSteps or {}
     local doneCustom = cdb.completedCustomSteps or {}
     local hasSkipOrDone = (next(skipped) ~= nil) or (next(doneCustom) ~= nil)
-    local rawCandidates = {}
+    local metricsPool = scorerScratch.metricsPool
+    local rawCandidates = scorerScratch.rawCandidates
+    local candCount = 0
 
     local vPlayer
     if vState.player then
@@ -766,6 +850,7 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
                 classFile = vState.player.classFile,
                 classId = vState.player.classId,
                 classBitmask = vState.player.classBitmask,
+                inGroup = vState.player.inGroup,
                 hasSkinning = vState.player.hasSkinning,
                 hasLeatherworking = vState.player.hasLeatherworking,
                 skinningRank = vState.player.skinningRank,
@@ -784,8 +869,11 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
     local pClassFile = vPlayer.classFile or "ROGUE"
 
     -- Precompute ready turn-in points, peer hub counts, and off-DB synthetic quests
-    local readyPoints = {}
-    local readyExtras = {}
+    local readyPoints = scorerScratch.readyPoints
+    local readyPointPool = scorerScratch.readyPointPool
+    local readyPointCount = 0
+    local readyExtras = scorerScratch.readyExtras
+    local readyExtraCount = 0
     for qid, activeEntry in pairs(vState.active or {}) do
         if activeEntry and activeEntry.isComplete == true and not activeEntry.isFailed and not vState.completed[qid] then
             local q = data.quests and data.quests[qid] or nil
@@ -813,34 +901,46 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
                         } or nil,
                         isSyntheticReady = true,
                     }
-                    readyExtras[#readyExtras + 1] = q
+                    readyExtraCount = readyExtraCount + 1
+                    readyExtras[readyExtraCount] = q
                 end
             end
             if q then
                 local pt = Scorer.GetQuestPoint(q, "TURN_IN")
-                readyPoints[#readyPoints + 1] = {
-                    qid = qid,
-                    zoneId = (pt and pt.zoneId) or q.zoneId,
-                    x = pt and pt.x,
-                    y = pt and pt.y,
-                }
+                readyPointCount = readyPointCount + 1
+                local rp = readyPointPool[readyPointCount]
+                if not rp then
+                    rp = {}
+                    readyPointPool[readyPointCount] = rp
+                end
+                rp.qid = qid
+                rp.zoneId = (pt and pt.zoneId) or q.zoneId
+                rp.x = pt and pt.x or nil
+                rp.y = pt and pt.y or nil
+                readyPoints[readyPointCount] = rp
             end
         end
     end
+    for trim = readyPointCount + 1, #readyPoints do
+        readyPoints[trim] = nil
+    end
+    for trim = readyExtraCount + 1, #readyExtras do
+        readyExtras[trim] = nil
+    end
 
-    local peerCountByQid = {}
+    local peerCountByQid = WipeMap(scorerScratch.peerCountByQid)
     local navAvail = (ns.Nav and ns.Nav.IsAvailable and ns.Nav.IsAvailable()) and true or false
-    for i = 1, #readyPoints do
+    for i = 1, readyPointCount do
         local a = readyPoints[i]
         local peers = 0
-        for j = 1, #readyPoints do
+        for j = 1, readyPointCount do
             if i ~= j then
                 local b = readyPoints[j]
                 if a.zoneId and b.zoneId and a.zoneId == b.zoneId and a.x and a.y and b.x and b.y then
                     local dx, dy = a.x - b.x, a.y - b.y
                     if navAvail then
                         if (dx * dx + dy * dy) <= 900.0 then
-                            local tSec, ok = ns.Nav.GetTravelSeconds(a.zoneId, a.x, a.y, b.zoneId, b.x, b.y, vPlayer, { unmountedOnly = true })
+                            local tSec, ok = ns.Nav.GetTravelSeconds(a.zoneId, a.x, a.y, b.zoneId, b.x, b.y, vPlayer, UNMOUNTED_NAV_OPTS)
                             if ok and tSec and tSec <= 48.0 then
                                 peers = peers + 1
                             end
@@ -853,9 +953,9 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
         end
         peerCountByQid[a.qid] = peers
     end
-    local recentChainSet = {}
-    local simChainSet = {}
-    local activeChainSet = {}
+    local recentChainSet = WipeMap(scorerScratch.recentChainSet)
+    local simChainSet = WipeMap(scorerScratch.simChainSet)
+    local activeChainSet = WipeMap(scorerScratch.activeChainSet)
     if ns.State and ns.State.GetRecentAcceptedQuests then
         local recentMap, recentFollowups = ns.State.GetRecentAcceptedQuests()
         for rqid, info in pairs(recentMap or {}) do
@@ -905,16 +1005,21 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             end
         end
     end
-    local readyCtx = {
-        peerCountByQid = peerCountByQid,
-        recentChainSet = recentChainSet,
-        simChainSet = simChainSet,
-        activeChainSet = activeChainSet,
-    }
+    local readyCtx = scorerScratch.readyCtx
+    readyCtx.peerCountByQid = peerCountByQid
+    readyCtx.recentChainSet = recentChainSet
+    readyCtx.simChainSet = simChainSet
+    readyCtx.activeChainSet = activeChainSet
     local hasLocalSameZoneWork = false
 
     local function EvaluateAndPush(q, action)
-        local m = ComputeCandidateMetrics(q, action, vState, weights, toggles, data, readyCtx)
+        local slotIdx = candCount + 1
+        local slot = metricsPool[slotIdx]
+        if not slot then
+            slot = {}
+            metricsPool[slotIdx] = slot
+        end
+        local m = ComputeCandidateMetrics(q, action, vState, weights, toggles, data, readyCtx, slot)
         local skipEntry = false
         if hasSkipOrDone then
             local dynKey = ns.State.GetStepKey({ index = 1, action = m.effAction, questId = q.id }, 1, "dynamic")
@@ -923,14 +1028,17 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             end
         end
         if not skipEntry then
-            rawCandidates[#rawCandidates + 1] = m
+            candCount = slotIdx
+            rawCandidates[candCount] = m
             if (action == "ACCEPT" or action == "COMPLETE") and vState.zoneId and m.targetZoneId == vState.zoneId then
                 hasLocalSameZoneWork = true
             end
         end
     end
 
-    local navIndexedOkFn = (isLive and navAvail and ns.Nav and ns.Nav.IsIndexedEligible) or nil
+    local canUseLiveIndex = navAvail and isDefaultData and ns.Nav and ns.Nav.IsIndexedEligible
+        and (isLive or (vState and vState.fromLiveSeed == true and vState.player ~= nil and vState.level == vState.player.level))
+    local navIndexedOkFn = canUseLiveIndex and ns.Nav.IsIndexedEligible or nil
 
     local function PassesAcceptWorthiness(q, qid)
         local qL = q.questLevel or q.minLevel or 1
@@ -943,6 +1051,10 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             or Scorer.GetDungeonUnlockInfo(qid, pLevel, data)
     end
 
+    local evalSkipElite = (ns.State and ns.State.ShouldSkipEliteNow)
+        and ns.State.ShouldSkipEliteNow(vPlayer, toggles)
+        or (toggles.skipEliteSolo ~= false and not (vPlayer and vPlayer.inGroup))
+
     local function TryEvaluateQuestId(qid, q)
         if not q or vState.completed[qid] then
             return
@@ -952,12 +1064,23 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
         if isReadyTurnIn then
             EvaluateAndPush(q, "TURN_IN")
         elseif activeEntry then
-            if ns.State.IsEligibleForPlayer(qid, vPlayer) then
+            if ns.State.IsEligibleForPlayer(qid, vPlayer)
+                and not (evalSkipElite and (not q.isDungeon) and (q.isGroup == true or activeEntry.isElite == true)) then
                 EvaluateAndPush(q, "COMPLETE")
             end
-        elseif (q.minLevel or 1) <= pLevel and (q.questLevel or 0) <= pLevel + maxOffset then
+        elseif (q.minLevel or 1) <= pLevel and (q.questLevel or 0) <= pLevel + maxOffset
+            and not (evalSkipElite and q.isGroup == true and not q.isDungeon) then
             if navIndexedOkFn and navIndexedOkFn(qid) then
-                if PassesAcceptWorthiness(q, qid) then
+                local exclBlocked = false
+                if (not isLive) and q.exclusiveTo then
+                    for _, exId in ipairs(q.exclusiveTo) do
+                        if exId ~= qid and (vState.completed[exId] or vState.active[exId]) then
+                            exclBlocked = true
+                            break
+                        end
+                    end
+                end
+                if (not exclBlocked) and PassesAcceptWorthiness(q, qid) then
                     EvaluateAndPush(q, "ACCEPT")
                 end
             elseif ns.State.IsEligibleForPlayer(qid, vPlayer) then
@@ -996,10 +1119,14 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
         local navPlayer = isLookahead and (vState.player or vPlayer) or vPlayer
         local navOpts = isLookahead and LOOKAHEAD_NAV_OPTS or LIVE_NAV_OPTS
         local pool, poolCount = ns.Nav.FindNearestEligibleQuests(vState.zoneId, vState.x, vState.y, data, navPlayer, navOpts)
-        local seenCand = {}
+        local seenCand = scorerScratch.seenCand
+        local seenList = scorerScratch.seenList
+        local seenCount = 0
         local function EvalOnce(qid)
             if qid and not seenCand[qid] then
                 seenCand[qid] = true
+                seenCount = seenCount + 1
+                seenList[seenCount] = qid
                 TryEvaluateQuestId(qid, data.quests[qid])
             end
         end
@@ -1047,6 +1174,10 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
         for uqid in pairs(vState.newlyUnlocked or {}) do
             EvalOnce(uqid)
         end
+        for i = 1, seenCount do
+            seenCand[seenList[i]] = nil
+            seenList[i] = nil
+        end
     else
         for qid, q in pairs(data.quests or {}) do
             TryEvaluateQuestId(qid, q)
@@ -1058,75 +1189,97 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
     end
 
     if hasLocalSameZoneWork and vState.zoneId then
-        for _, m in ipairs(rawCandidates) do
+        for i = 1, candCount do
+            local m = rawCandidates[i]
             if m.rawAction == "TURN_IN" and m.targetZoneId and m.targetZoneId ~= vState.zoneId then
                 m.score = m.score - READY_CROSS_ZONE_DETOUR_PENALTY
             end
         end
     end
 
-    table.sort(rawCandidates, function(a, b)
-        if math.abs(a.score - b.score) > 0.001 then
-            return a.score > b.score
-        end
-        return (a.quest.id or 0) < (b.quest.id or 0)
-    end)
-
-    local seedQids = nil
-    if (vState.stepCounter or 1) == 1 then
-        seedQids = {}
-        local seenSeed = {}
-        for i = 1, #rawCandidates do
-            local q = rawCandidates[i].quest
-            local qid = q and q.id
-            if qid and not q.isSyntheticReady and not seenSeed[qid] then
-                seenSeed[qid] = true
-                seedQids[#seedQids + 1] = qid
-                if #seedQids >= 36 then
-                    break
-                end
-            end
-        end
-        if vState then
-            vState.seedQids = seedQids
-        end
+    for i = candCount + 1, #rawCandidates do
+        rawCandidates[i] = nil
     end
 
-    -- Bound expensive QuestieDB live/IsDoable checks and full step materialization to top sorted candidates
     local out = {}
     local checkLive = (vState.stepCounter == 1) and (toggles.consultQuestie ~= false)
-    local liveOpts = LIVE_BLOCK_OPTS
-    local questieChecked = 0
-    local liveComp = isLive and nil or vState.completed
-    local liveAct = isLive and nil or vState.active
+    local seedQids = nil
 
-    for _, m in ipairs(rawCandidates) do
-        local keep = true
-        if checkLive and m.rawAction == "ACCEPT" then
-            if questieChecked < MAX_CANDIDATE_QUESTIE_CHECKS then
-                questieChecked = questieChecked + 1
-                local q = m.quest
-                local bCode = ns.State.GetQuestBlockReason(
-                    q.id,
-                    q.isDungeon and "DUNGEON_PREP" or "ACCEPT",
-                    vPlayer,
-                    liveComp,
-                    liveAct,
-                    toggles,
-                    liveOpts
-                )
-                if bCode then
-                    keep = false
+    if candCount > 0 then
+        if cap == 1 and (not checkLive) and (vState.stepCounter or 1) > 1 then
+            local best = rawCandidates[1]
+            for i = 2, candCount do
+                local m = rawCandidates[i]
+                if CompareCandidateMetrics(m, best) then
+                    best = m
                 end
-            else
-                break
+            end
+            out[1] = MaterializeCandidate(best, vState, data)
+        else
+            if candCount > 1 then
+                table.sort(rawCandidates, CompareCandidateMetrics)
+            end
+
+            if (vState.stepCounter or 1) == 1 then
+                seedQids = {}
+                local seenSeed = {}
+                for i = 1, candCount do
+                    local q = rawCandidates[i].quest
+                    local qid = q and q.id
+                    if qid and not q.isSyntheticReady and not seenSeed[qid] then
+                        seenSeed[qid] = true
+                        seedQids[#seedQids + 1] = qid
+                        if #seedQids >= 36 then
+                            break
+                        end
+                    end
+                end
+                if vState then
+                    vState.seedQids = seedQids
+                end
+            end
+
+            -- Bound expensive QuestieDB live/IsDoable checks and full step materialization to top sorted candidates
+            local liveOpts = LIVE_BLOCK_OPTS
+            local questieChecked = 0
+            local liveComp = isLive and nil or vState.completed
+            local liveAct = isLive and nil or vState.active
+
+            for i = 1, candCount do
+                local m = rawCandidates[i]
+                local keep = true
+                if checkLive and m.rawAction == "ACCEPT" then
+                    if questieChecked < MAX_CANDIDATE_QUESTIE_CHECKS then
+                        questieChecked = questieChecked + 1
+                        local q = m.quest
+                        local bCode = ns.State.GetQuestBlockReason(
+                            q.id,
+                            q.isDungeon and "DUNGEON_PREP" or "ACCEPT",
+                            vPlayer,
+                            liveComp,
+                            liveAct,
+                            toggles,
+                            liveOpts
+                        )
+                        if bCode then
+                            keep = false
+                        end
+                    else
+                        break
+                    end
+                end
+                if keep then
+                    out[#out + 1] = MaterializeCandidate(m, vState, data)
+                    if #out >= cap then
+                        break
+                    end
+                end
             end
         end
-        if keep then
-            out[#out + 1] = MaterializeCandidate(m, vState, data)
-            if #out >= cap then
-                break
-            end
+    elseif (vState.stepCounter or 1) == 1 then
+        seedQids = {}
+        if vState then
+            vState.seedQids = seedQids
         end
     end
 
@@ -1160,9 +1313,10 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
     local hasQdb = (_G.QuestieDB ~= nil or _G.QuestieLoader ~= nil) and 1 or 0
     local blkCount = #((ns.State and ns.State.GetBlockedSteps and ns.State.GetBlockedSteps()) or {})
     local prof = player and player.professions
+    local skipEliteNow = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(player, toggles) or (toggles.skipEliteSolo ~= false and not (player and player.inGroup))
 
     local dynKey = string.format(
-        "%d:%d:%d:%d:%d:%s:%s:%s:%s:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d:%d",
+        "%d:%d:%d:%d:%d:%s:%s:%s:%s:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d:%d",
         gen, sGen,
         tonumber(player and player.level) or 24,
         tonumber(player and player.xpPct) or 0,
@@ -1183,6 +1337,7 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
         tostring(toggles.prioritizeSkinningLW ~= false),
         tostring(toggles.locationReorder ~= false),
         tostring(toggles.proactiveChains ~= false),
+        tostring(skipEliteNow),
         tostring(player and player.raceId or 0),
         tostring(player and player.faction or "Alliance"),
         tostring(player and player.classFile or "ROGUE"),
@@ -1223,6 +1378,7 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
             questId = qid,
             isComplete = entry.isComplete,
             isFailed = entry.isFailed,
+            isElite = entry.isElite,
         }
     end
 
@@ -1259,6 +1415,8 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
         newlyUnlocked = {},
         stepCounter = 1,
         isLiveState = true,
+        maxCandidates = 1,
+        fromLiveSeed = true,
     }
 
     local steps = {}
@@ -1341,6 +1499,7 @@ function Scorer.GetPriorityClassQuestStep(player, toggles, routeZoneId, data)
 
     local skipped = (ns.charDB and ns.charDB.skippedSteps) or {}
     local pLevel = tonumber(player.level) or 1
+    local skipEliteNow = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(player, toggles) or (toggles.skipEliteSolo ~= false and not (player and player.inGroup))
     local best, bestPri = nil, -999999
     local fastOpts = { consultQuestie = false, checkIsDoable = false, useBulkCompletion = true, reasonless = true }
 
@@ -1354,7 +1513,12 @@ function Scorer.GetPriorityClassQuestStep(player, toggles, routeZoneId, data)
                 local qL = tonumber(q.questLevel) or minL
                 local okBand = (st == "ready" or st == "active") or (minL <= pLevel and qL >= pLevel - 6 and qL <= pLevel + 2)
                 if okBand then
-                    local blocked = (action == "ACCEPT") and ns.State.GetQuestBlockReason(qid, "ACCEPT", player, nil, nil, toggles, fastOpts) or nil
+                    local blocked
+                    if action == "ACCEPT" then
+                        blocked = ns.State.GetQuestBlockReason(qid, "ACCEPT", player, nil, nil, toggles, fastOpts)
+                    elseif action == "COMPLETE" and skipEliteNow and ns.State.IsQuestElite and ns.State.IsQuestElite(qid, q) then
+                        blocked = "elite_solo"
+                    end
                     if not blocked then
                         local qZone = q.zoneId
                         local inZone = (qZone == player.zoneId) or (routeZoneId and qZone == routeZoneId)

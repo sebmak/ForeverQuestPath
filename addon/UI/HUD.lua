@@ -3,9 +3,10 @@
 -- Rules:
 --   1. Compact, movable HUD Tracker displaying the Next Step card (action,
 --      quest/target, NPC & coords, travel note, XP/Gold/Bag/<Class> BiS/Skin/LW/
---      Ready Turn-In/Friend Chain/GPS Reorder/Chain Progress badges, "Why
---      this step?"), active MaxLv cap, GPS status, Ready Turn-Ins counter,
---      Skip / Back / Reset / Pin buttons, and 5 Upcoming Steps with Chain tags.
+--      Elite/Ready Turn-In/Friend Chain/GPS Reorder/Chain Progress badges, "Why
+--      this step?"), active MaxLv cap, GPS status, Grouped/No Elite/Elite All
+--      indicator, Ready Turn-Ins counter, Skip / Back / Reset / Pin buttons, and
+--      5 Upcoming Steps with Chain tags.
 --   2. Reuses pooled row widgets; never leaks frames across refreshes.
 --   3. Separates view-model computation (HUD.GetViewModel, forwarding
 --      player into State.GetCurrentStep) from frame updates so both in-game
@@ -114,6 +115,11 @@ local function FormatBadges(step, player)
     if b.isReadyTurnIn or step.isReadyTurnIn then
         parts[#parts + 1] = "|cff4dff9e[Ready Turn-In]|r"
     end
+    local qid = step.questId or (type(step.questIds) == "table" and step.questIds[1]) or nil
+    local isDungeonStep = (step.isDungeon == true) or (step.action == "DUNGEON_PREP") or (step.action == "DUNGEON_RUN")
+    if (not isDungeonStep) and (b.isElite or step.isElite or step.isGroup or (qid and ns.State and ns.State.IsQuestElite and ns.State.IsQuestElite(qid))) then
+        parts[#parts + 1] = "|cffffaa33[Elite]|r"
+    end
     local ch = b.chain or (step.chainTotal and step.chainTotal >= 2 and {
         pos = step.chainPos or step.chainStep,
         total = step.chainTotal,
@@ -180,18 +186,24 @@ function HUD.GetViewModel()
     elseif not gpsEnabled then
         gpsSuffix = " · GPS Off"
     end
+    local inGroup = (player and player.inGroup == true)
+    local skipEliteSolo = not (cdb.toggles and cdb.toggles.skipEliteSolo == false)
+    local eliteSuffix = inGroup and " · Grouped" or (skipEliteSolo and " · No Elite" or " · Elite All")
     local modeLabel = ((cdb.toggles and cdb.toggles.dynamicRescore)
         and (ns.GetPresetLabel(cdb.activeProfile or "custom") .. " · Live")
         or ns.GetPresetLabel(cdb.activeProfile or "balanced"))
         .. string.format(" · MaxLv %s%d (<=%d)", offSign, maxOff, capLv)
         .. readySuffix
         .. gpsSuffix
+        .. eliteSuffix
 
     local charTag = string.format("%s %s%s", player.raceName or "Gnome", player.className or "Rogue", player.isCharOverride and "*" or "")
     local vm = {
         playerLine = string.format("Lv %d (%d%%) · %s · %s", player.level or 24, player.xpPct or 0, charTag, player.zoneName or "Wetlands"),
         modeLabel = modeLabel,
         readyTurnInCount = readyCount,
+        inGroup = inGroup,
+        skipEliteSolo = skipEliteSolo,
         meta = meta,
         deviation = deviation,
         current = nil,

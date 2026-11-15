@@ -1,6 +1,8 @@
 -- Mock WoW Forever (Interface 16001, build 1.60.1) Lua 5.1 / LuaJIT test harness.
 -- Provides faithful client globals, C_QuestLog, C_Map, C_SuperTrack, UiMapPoint,
--- Frame/Widget APIs, SavedVariables lifecycle, .toc loader, and TomTom/OpenMap mocks.
+-- Frame/Widget APIs, SavedVariables lifecycle, .toc loader, group/raid APIs
+-- (IsInGroup, IsInRaid, GetNumGroupMembers, GetNumPartyMembers, GetNumRaidMembers,
+-- Mock.SetGroup), and TomTom/OpenMap mocks.
 
 local M = {}
 
@@ -142,6 +144,9 @@ M.state = {
         isDead = false,
         isGhost = false,
         mounted = false,
+        inGroup = false,
+        isRaid = false,
+        groupMembers = 0,
         hearthCooldownStart = 0,
         hearthCooldownDuration = 0,
     },
@@ -637,6 +642,9 @@ function M.Reset(opts)
         isDead = false,
         isGhost = false,
         mounted = false,
+        inGroup = false,
+        isRaid = false,
+        groupMembers = 0,
         hearthCooldownStart = 0,
         hearthCooldownDuration = 0,
     }
@@ -795,6 +803,24 @@ function M.Reset(opts)
     end
     _G.IsMounted = function()
         return M.state.character.mounted == true
+    end
+    _G.IsInGroup = function()
+        return M.state.character.inGroup == true
+    end
+    _G.IsInRaid = function()
+        return M.state.character.isRaid == true
+    end
+    _G.GetNumGroupMembers = function()
+        return M.state.character.groupMembers or (M.state.character.inGroup and 2 or 0)
+    end
+    _G.GetNumPartyMembers = function()
+        if M.state.character.isRaid then return 0 end
+        local n = M.state.character.groupMembers or (M.state.character.inGroup and 2 or 0)
+        return (n > 1) and (n - 1) or 0
+    end
+    _G.GetNumRaidMembers = function()
+        if not M.state.character.isRaid then return 0 end
+        return M.state.character.groupMembers or (M.state.character.inGroup and 10 or 0)
     end
     _G.GetItemCooldown = function(itemId)
         if tonumber(itemId) == 6948 then
@@ -1445,6 +1471,18 @@ function M.SetPlayerPosition(uiMapId, x, y, subZone, fireEvent)
     end
     if fireEvent == true then
         M.FireEvent("ZONE_CHANGED_NEW_AREA")
+    end
+end
+
+function M.SetGroup(inGroup, memberCount, isRaid, fireEvent)
+    local grouped = (inGroup == true)
+    local raid = grouped and (isRaid == true) or false
+    local count = grouped and (tonumber(memberCount) or (raid and 10 or 2)) or 0
+    M.state.character.inGroup = grouped
+    M.state.character.isRaid = raid
+    M.state.character.groupMembers = count
+    if fireEvent ~= false then
+        M.FireEvent("GROUP_ROSTER_UPDATE")
     end
 end
 

@@ -49,15 +49,20 @@
 --      memoized IsEligibleForPlayer, minLevel, prereqIds, configurable
 --      questLevel <= playerLevel + maxLevelOffset cap defaulting to +2 with
 --      -3..+5 slider, prevNonRedMaxLevelOffset memory across red-quest toggles,
---      and auto-unlock deferral, requiredSkill gating, and optional QuestieDB
---      checks) using two-stage maxOffset-independent questBaseMemo /
---      questPostMemo, bulkSynced-aware GetCompletedReadOnly(), zero weak-key
---      ephemeron tables, dbQuestStateGeneration + chain/block preservation across
---      MAX_LEVEL_CHANGED and off-DB quest events, bounded stepKeyCache and
---      acceptIdxByStepsCache for O(1) IsAcceptSkippedEarlier lookups, dagState
---      memoization in BuildIntraZoneReorderPlan, and step/player caches.
+--      and auto-unlock deferral, open-world elite gating when toggles.skipEliteSolo
+--      is enabled and player is solo via IsQuestElite / ShouldSkipEliteNow
+--      [never blocking already-ready turn-ins or dungeon quests], requiredSkill
+--      gating, and optional QuestieDB checks) using two-stage maxOffset-independent
+--      questBaseMemo / questPostMemo, bulkSynced-aware GetCompletedReadOnly(),
+--      zero weak-key ephemeron tables, dbQuestStateGeneration + chain/block
+--      preservation across MAX_LEVEL_CHANGED and off-DB quest events, bounded
+--      stepKeyCache and acceptIdxByStepsCache for O(1) IsAcceptSkippedEarlier
+--      lookups, dagState memoization in BuildIntraZoneReorderPlan, and
+--      step/player caches.
 --   5. Eliminates idle and loot/skinning CPU work: fingerprints active quest
 --      IDs, isComplete/isFailed flags, player level, profession skill ranks, and
+--      live solo/group status (HasGroupStatusChanged) so roster noise refreshes
+--      only when solo/grouped flips; keeps route state and caches fast.
 --      zone transitions without calling GetAllCompletedQuestIDs or GetQuestObjectives
 --      on routine QUEST_LOG_UPDATE bursts (suppressing normal loot and partial
 --      1/10..9/10 objective drops cleanly), freezes location/GPS/zone-catchup/
@@ -362,6 +367,8 @@ local perfScratch = {
     friendHasObjLive = {},
     friendPairDist = {},
     readyStepDist = { map = {}, stepsRef = nil, navAvail = nil, faction = nil, count = 0 },
+    offDbEliteMemo = {},
+    lastObservedInGroup = nil,
 }
 local decCache = {
     byMaxOff = {},
@@ -610,6 +617,7 @@ local function BumpGeneration(keepChainCache, refreshProfessions, keepDbQuestCac
             perfScratch.gpsProactiveStepCacheGen = -1
             perfScratch.reorderedStepCache = {}
             perfScratch.reorderedCount = 0
+            perfScratch.offDbEliteMemo = {}
             decCache.byMaxOff = {}
             decCache.byStepBadge = {}
             decCache.epoch = decCache.epoch + 1
@@ -1276,6 +1284,7 @@ function State.GetPlayerInfo()
     local zoneId = State.ResolveZoneId(uiMapId, zoneName) or startZoneId or 11
     local deadNow = (ns.IsPlayerDeadOrGhost and ns.IsPlayerDeadOrGhost()) and true or false
     local onTaxiNow = (UnitOnTaxi and UnitOnTaxi("player")) and true or false
+    local inGroupNow = (ns.IsPlayerInGroup and ns.IsPlayerInGroup()) and true or false
 
     if not deadNow then
         deadBootLocation = nil
@@ -1356,6 +1365,7 @@ function State.GetPlayerInfo()
         and pc.subZoneName == subZoneName
         and pc.isDead == deadNow
         and pc.onTaxi == onTaxiNow
+        and pc.inGroup == inGroupNow
         and pc.hasSkinning == prof.hasSkinning
         and pc.hasLeatherworking == prof.hasLeatherworking
         and pc.skinningRank == prof.skinningRank
@@ -1399,6 +1409,7 @@ function State.GetPlayerInfo()
         subZoneName = subZoneName,
         isDead = deadNow,
         onTaxi = onTaxiNow,
+        inGroup = inGroupNow,
         hasSkinning = prof.hasSkinning,
         hasLeatherworking = prof.hasLeatherworking,
         skinningRank = prof.skinningRank,
@@ -1685,8 +1696,107 @@ local function ProfTablesEqual(a, b, depth)
     return true
 end
 
+function perfScratch.IsEliteQuestTag(tagName, suggestedGroup)
+    if type(tagName) == "string" and tagName ~= "" then
+        local lower = string.lower(tagName)
+        if lower == "dungeon" or lower == "heroic" then
+            return false
+        end
+        if lower == "elite" or lower == "group" or lower == "raid" then
+            return true
+        end
+    end
+    if type(suggestedGroup) == "number" and suggestedGroup >= 2 then
+        return true
+    end
+    return false
+end
+
+function State.ShouldSkipEliteNow(player, toggles)
+    local t = toggles or (ns.charDB and ns.charDB.toggles)
+    if t and t.skipEliteSolo == false then
+        return false
+    end
+    if player ~= nil and player.inGroup ~= nil then
+        return not player.inGroup
+    end
+    if ns.IsPlayerInGroup and ns.IsPlayerInGroup() then
+        return false
+    end
+    return true
+end
+
+function State.HasGroupStatusChanged()
+    local curInGroup = (ns.IsPlayerInGroup and ns.IsPlayerInGroup()) and true or false
+    if perfScratch.lastObservedInGroup == nil then
+        return true
+    end
+    return perfScratch.lastObservedInGroup ~= curInGroup
+end
+
+function State.IsQuestElite(questId, q)
+    if not questId then
+        return false
+    end
+    if not q then
+        local data = ns.GetData()
+        q = data and data.quests and data.quests[questId] or nil
+    end
+    if q then
+        if q.isDungeon == true then
+            return false
+        end
+        if q.isGroup == true then
+            return true
+        end
+    end
+    local act = activeQuests and activeQuests[questId]
+    if act and act.isElite == true then
+        return true
+    end
+    if q then
+        return false
+    end
+    local qdb = GetQuestieDB and GetQuestieDB() or nil
+    if perfScratch.offDbEliteQdbRef ~= qdb then
+        perfScratch.offDbEliteMemo = {}
+        perfScratch.offDbEliteQdbRef = qdb
+    end
+    local memo = perfScratch.offDbEliteMemo
+    if memo then
+        local cached = memo[questId]
+        if cached ~= nil then
+            return cached == true
+        end
+    end
+    local isEl = false
+    if C_QuestLog and C_QuestLog.GetQuestTagInfo then
+        local okT, tagInfo = pcall(C_QuestLog.GetQuestTagInfo, questId)
+        if okT and type(tagInfo) == "table" and perfScratch.IsEliteQuestTag(tagInfo.tagName, tagInfo.suggestedGroup) then
+            isEl = true
+        end
+    end
+    if (not isEl) and qdb and qdb.QueryQuestSingle then
+        local okF, flags = pcall(qdb.QueryQuestSingle, questId, "questFlags")
+        flags = okF and tonumber(flags) or nil
+        if flags and flags > 0 then
+            local hasBit64 = (math.floor(flags / 64) % 2) == 1
+            local hasBit32 = (math.floor(flags / 32) % 2) == 1
+            if hasBit64 and not hasBit32 then
+                isEl = true
+            end
+        end
+    end
+    if memo then
+        memo[questId] = isEl
+    end
+    return isEl
+end
+
 function State.ScanQuestLog()
     local updated = {}
+    local data = ns.GetData()
+    local dbQuests = data and data.quests
     if C_QuestLog and C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetInfo then
         local ok, numEntries = pcall(C_QuestLog.GetNumQuestLogEntries)
         numEntries = ok and tonumber(numEntries) or 0
@@ -1695,12 +1805,20 @@ function State.ScanQuestLog()
             if okInfo and info and not info.isHeader and info.questID and info.questID > 0 then
                 local qid = info.questID
                 local isComplete, isFailed = ResolveCQuestLogFlags(qid, info)
+                local isEl = perfScratch.IsEliteQuestTag(info.tagName, info.suggestedGroup)
+                if (not isEl) and info.tagName == nil and (not (dbQuests and dbQuests[qid])) and C_QuestLog.GetQuestTagInfo then
+                    local okT, tagInfo = pcall(C_QuestLog.GetQuestTagInfo, qid)
+                    if okT and type(tagInfo) == "table" then
+                        isEl = perfScratch.IsEliteQuestTag(tagInfo.tagName, tagInfo.suggestedGroup)
+                    end
+                end
                 updated[qid] = {
                     questId = qid,
                     title = info.title,
                     level = info.level,
                     isComplete = isComplete,
                     isFailed = isFailed,
+                    isElite = isEl or nil,
                     objectives = nil,
                 }
                 sessionAccepted[qid] = nil
@@ -1710,15 +1828,17 @@ function State.ScanQuestLog()
         local ok, numEntries = pcall(GetNumQuestLogEntries)
         numEntries = ok and tonumber(numEntries) or 0
         for i = 1, numEntries do
-            local title, level, _, isHeader, _, isComplete, _, questID = GetQuestLogTitle(i)
+            local title, level, questTag, isHeader, _, isComplete, _, questID = GetQuestLogTitle(i)
             if not isHeader and questID and questID > 0 then
                 local readyFlag, failedFlag = ResolveLegacyQuestFlags(questID, isComplete)
+                local isEl = perfScratch.IsEliteQuestTag(questTag, nil)
                 updated[questID] = {
                     questId = questID,
                     title = title,
                     level = level,
                     isComplete = readyFlag,
                     isFailed = failedFlag,
+                    isElite = isEl or nil,
                     objectives = nil,
                 }
                 sessionAccepted[questID] = nil
@@ -1730,14 +1850,14 @@ function State.ScanQuestLog()
     for qid, rawScans in pairs(sessionAccepted) do
         local scans = (type(rawScans) == "number" and rawScans or 0) + 1
         if scans <= 1 and (not State.IsQuestCompleted(qid)) and (not updated[qid]) then
-            local data = ns.GetData()
-            local q = data.quests[qid]
+            local q = dbQuests and dbQuests[qid]
             updated[qid] = {
                 questId = qid,
                 title = q and q.name or ("Quest #" .. tostring(qid)),
                 level = q and q.questLevel or 0,
                 isComplete = false,
                 isFailed = false,
+                isElite = (q and q.isGroup == true and not q.isDungeon) or nil,
                 objectives = nil,
             }
             sessionAccepted[qid] = scans
@@ -1962,8 +2082,14 @@ local function IsRequiredSkillBlocked(reqSkill, prof, reasonless)
     return nil, nil
 end
 
-function State.IsQuestBlockedForNav(questId, q, prof)
+function State.IsQuestBlockedForNav(questId, q, prof, skipEliteNow)
     if not q then return true end
+    if skipEliteNow == nil then
+        skipEliteNow = State.ShouldSkipEliteNow()
+    end
+    if skipEliteNow and State.IsQuestElite(questId, q) then
+        return true
+    end
     if q.exclusiveTo then
         for _, otherId in ipairs(q.exclusiveTo) do
             if otherId ~= questId and (State.IsQuestCompleted(otherId, true) or activeQuests[otherId] ~= nil) then
@@ -2010,6 +2136,7 @@ function State.GetQuestBlockReason(questId, action, player, extraCompleted, extr
     local prof = (player and player.professions) or State.DetectProfessions()
 
     local maxOffset = State.GetEffectiveMaxLevelOffset(toggles)
+    local skipEliteNow = (opts and opts.skipEliteSolo ~= nil) and (opts.skipEliteSolo == true) or State.ShouldSkipEliteNow(player, toggles)
     local canUseBaseMemo = false
     local canUsePostMemo = false
     if useBulk then
@@ -2084,6 +2211,22 @@ function State.GetQuestBlockReason(questId, action, player, extraCompleted, extr
     local qdbHasQuest = false
     local qdbHasQuestChecked = false
     local baseHit = false
+    if skipEliteNow and action ~= "DUNGEON_PREP" and action ~= "DUNGEON_RUN" then
+        local isVirtDone = extraCompleted and extraCompleted[questId] == true
+        if not isVirtDone then
+            local virtAct = extraActive and extraActive[questId]
+            local liveAct = activeQuests[questId]
+            local actEntry = (virtAct ~= nil) and virtAct or liveAct
+            if actEntry ~= nil then
+                local isDoneOrReady = State.IsQuestCompleted(questId, useBulk)
+                    or (type(actEntry) == "table" and actEntry.isComplete == true)
+                    or (type(actEntry) ~= "table" and liveAct and liveAct.isComplete == true)
+                if (not isDoneOrReady) and State.IsQuestElite(questId, q) then
+                    return "elite_solo", reasonless and "elite_solo" or "Group / Elite quest skipped while solo"
+                end
+            end
+        end
+    end
     if baseBucket then
         local bm = baseBucket[questId]
         if bm == -1 then
@@ -2190,6 +2333,18 @@ function State.GetQuestBlockReason(questId, action, player, extraCompleted, extr
         end
         local sign = (maxOffset >= 0) and "+" or ""
         return "quest_level_too_high", string.format("Lv %d quest exceeds max level (Lv %d %s%d = %d)", effectiveQLevel, level, sign, maxOffset, level + maxOffset)
+    end
+
+    if skipEliteNow and action ~= "DUNGEON_PREP" and action ~= "DUNGEON_RUN" then
+        local isEl
+        if q then
+            isEl = (not q.isDungeon) and ((q.isGroup == true) or (activeQuests ~= nil and activeQuests[questId] ~= nil and activeQuests[questId].isElite == true))
+        else
+            isEl = State.IsQuestElite(questId, nil)
+        end
+        if isEl then
+            return "elite_solo", reasonless and "elite_solo" or "Group / Elite quest skipped while solo"
+        end
     end
 
     if postBucket then
@@ -2306,14 +2461,21 @@ function State.FindActionablePrereqStep(questId, targetStep, routeIdx, player, p
 
     local isAny = (q.prereqMode == "any")
     local skippedSteps = ns.charDB and ns.charDB.skippedSteps or {}
+    local skipEliteNow = State.ShouldSkipEliteNow(player, toggles)
 
     for _, pid in ipairs(q.prereqIds) do
         if not State.IsQuestCompleted(pid) then
             local pq = data.quests and data.quests[pid]
             if pq and not State.IsQuestExcluded(pid) then
                 local pst = State.GetQuestStatus(pid)
-                if pst == "ready" or pst == "active" then
+                if pst == "ready" then
                     return BuildResolvedPrereqStep(pq, pst, targetStep, routeIdx, questId)
+                elseif pst == "active" then
+                    if not (skipEliteNow and State.IsQuestElite(pid, pq)) then
+                        return BuildResolvedPrereqStep(pq, pst, targetStep, routeIdx, questId)
+                    elseif not isAny then
+                        return nil
+                    end
                 elseif not skippedSteps["prereq:" .. tostring(pid)] then
                     local pCode = State.GetQuestBlockReason(pid, pq.isDungeon and "DUNGEON_PREP" or "ACCEPT", player, nil, nil, toggles)
                     if pCode == nil then
@@ -2572,6 +2734,7 @@ local function IsStepDirectBlocked(step, steps, idx, player, profileKey, extraCo
     player = player or playerCache or State.GetPlayerInfo()
     toggles = type(toggles) == "table" and toggles or ((ns.charDB and ns.charDB.toggles) or {})
     local useBulk = (opts and opts.useBulkCompletion == true)
+    local skipEliteNow = (opts and opts.skipEliteSolo ~= nil) and (opts.skipEliteSolo == true) or State.ShouldSkipEliteNow(player, toggles)
 
     local count = (type(qids) == "table" and #qids > 0) and #qids or 1
     if action == "ACCEPT" or (action == "DUNGEON_PREP" and step.prepMode == "accept") then
@@ -2586,16 +2749,34 @@ local function IsStepDirectBlocked(step, steps, idx, player, profileKey, extraCo
     end
 
     -- For COMPLETE / TURN_IN / DUNGEON_RUN / post-accept DUNGEON_PREP:
-    -- If at least one quest is already active/ready/completed, let player proceed;
-    -- only block when EVERY incomplete quest is neither active/ready nor eligible/accepted.
+    -- If at least one non-blocked quest is already active/ready/completed, let player proceed;
+    -- incomplete elite quests in the quest log still block while solo (unless already ready),
+    -- and only block the step when EVERY incomplete quest is neither active/ready nor eligible/accepted.
+    local data = ns.GetData()
+    local dbQuests = data and data.quests
+    local reasonless = (opts and opts.reasonless == true)
     local anyInProgressOrDone = false
     local firstCode, firstReason = nil, nil
     for i = 1, count do
         local qid = qids and qids[i] or singleQid
         local isDone = State.IsQuestCompleted(qid, useBulk) or (extraCompleted and extraCompleted[qid] == true)
-        local st = isDone and "completed" or ((extraActive and extraActive[qid] ~= nil) and "active") or State.GetQuestStatus(qid, useBulk)
-        if st == "completed" or st == "active" or st == "ready" then
+        local virtAct = extraActive and extraActive[qid]
+        local liveAct = activeQuests[qid]
+        local actRec = (virtAct ~= nil) and virtAct or liveAct
+        local isReady = (type(actRec) == "table" and actRec.isComplete == true)
+            or (actRec ~= nil and type(actRec) ~= "table" and liveAct and liveAct.isComplete == true)
+        local st = isDone and "completed" or (isReady and "ready") or (actRec ~= nil and "active") or State.GetQuestStatus(qid, useBulk)
+        if st == "completed" or st == "ready" then
             anyInProgressOrDone = true
+        elseif st == "active" then
+            if skipEliteNow and action ~= "DUNGEON_RUN" and action ~= "DUNGEON_PREP" and State.IsQuestElite(qid, dbQuests and dbQuests[qid]) then
+                if not firstCode then
+                    firstCode = "elite_solo"
+                    firstReason = reasonless and "elite_solo" or "Group / Elite quest skipped while solo"
+                end
+            else
+                anyInProgressOrDone = true
+            end
         else
             local code, reason = State.GetQuestBlockReason(qid, action, player, extraCompleted, extraActive, toggles, opts)
             if not code and (action == "COMPLETE" or action == "TURN_IN") and IsAcceptSkippedEarlier(qid, steps, idx, profileKey, player, extraCompleted, extraActive, toggles) then
@@ -3556,7 +3737,7 @@ function State.GetRouteReadySignature()
     return sig
 end
 
-function perfScratch.CheckInlineReadyElig(qid, q, isVirtExcl, player, pLevel, maxQuestLv, vSimCompleted, completedMap, checkCompSlow)
+function perfScratch.CheckInlineReadyElig(qid, q, isVirtExcl, player, pLevel, maxQuestLv, vSimCompleted, completedMap, checkCompSlow, skipEliteNow)
     if isVirtExcl then
         return "exclusive_taken"
     end
@@ -3568,6 +3749,9 @@ function perfScratch.CheckInlineReadyElig(qid, q, isVirtExcl, player, pLevel, ma
     end
     if (tonumber(q.questLevel) or 0) > maxQuestLv then
         return "quest_level_too_high"
+    end
+    if skipEliteNow and q.isGroup == true and not q.isDungeon then
+        return "elite_solo"
     end
     if q.prereqIds and #q.prereqIds > 0 then
         local pids = q.prereqIds
@@ -3816,6 +4000,7 @@ function State.GetReadyTurnInPlan(steps, cursor, player, pkey, toggles)
     local readySig = table.concat(sigParts, ",", 1, readyCount)
 
     local consultQuestie = (toggles.consultQuestie ~= false)
+    local skipEliteNow = State.ShouldSkipEliteNow(player, toggles)
     local rs = perfScratch.readyStaticCache
     if not (rs
         and rs.sGen == sGen
@@ -3833,6 +4018,7 @@ function State.GetReadyTurnInPlan(steps, cursor, player, pkey, toggles)
         and rs.classId == classId
         and rs.faction == faction
         and rs.consultQuestie == consultQuestie
+        and rs.skipEliteNow == skipEliteNow
         and rs.useDynamic == useDynamic
         and rs.navAvail == navAvail
         and rs.mounted == curMounted) then
@@ -3850,6 +4036,7 @@ function State.GetReadyTurnInPlan(steps, cursor, player, pkey, toggles)
             and rCtx.classId == classId
             and rCtx.faction == faction
             and rCtx.consultQuestie == consultQuestie
+            and rCtx.skipEliteNow == skipEliteNow
             and rCtx.useDynamic == useDynamic
             and rCtx.navAvail == navAvail
             and rCtx.mounted == curMounted
@@ -3897,6 +4084,7 @@ function State.GetReadyTurnInPlan(steps, cursor, player, pkey, toggles)
                 classId = classId,
                 faction = faction,
                 consultQuestie = consultQuestie,
+                skipEliteNow = skipEliteNow,
                 useDynamic = useDynamic,
                 navAvail = navAvail,
                 mounted = curMounted,
@@ -4091,10 +4279,18 @@ function State.GetReadyTurnInPlan(steps, cursor, player, pkey, toggles)
                                                     local nsSkip = hasSkipped and State.IsStepSkipped(nsStep, look, pkey) or false
                                                     if (not nsSkip) and (not nsDone) then
                                                         local nsBlocked = false
-                                                        if nSingle and (nDoneQ or (nActE ~= nil) or vSimCompleted[nqid] or vSimActive[nqid]) then
+                                                        local nIncompElite = skipEliteNow and (nqid ~= nil)
+                                                            and nAct ~= "DUNGEON_PREP" and nAct ~= "DUNGEON_RUN"
+                                                            and (not nDoneQ) and not (nActE ~= nil and nActE.isComplete == true)
+                                                            and (nq ~= nil
+                                                                and ((not nq.isDungeon) and ((nq.isGroup == true) or (nActE ~= nil and nActE.isElite == true)))
+                                                                or (nq == nil and State.IsQuestElite(nqid, nil)))
+                                                        if nIncompElite and (nActE ~= nil or vSimActive[nqid]) then
+                                                            nsBlocked = true
+                                                        elseif nSingle and (nDoneQ or (nActE ~= nil) or vSimCompleted[nqid] or vSimActive[nqid]) then
                                                             nsBlocked = false
                                                         elseif nSingle and (not hasQdbNow) and (not nq.requiredSkill) then
-                                                            local nbCode = perfScratch.CheckInlineReadyElig(nqid, nq, nVirtExcl, player, pLevel, maxQuestLv, vSimCompleted, completedMap, checkCompSlow)
+                                                            local nbCode = perfScratch.CheckInlineReadyElig(nqid, nq, nVirtExcl, player, pLevel, maxQuestLv, vSimCompleted, completedMap, checkCompSlow, skipEliteNow)
                                                             if (not nbCode) and (nAct == "COMPLETE" or nAct == "TURN_IN") then
                                                                 if vSimBlockedAccept[nqid] or (lookBlockedAccept and lookBlockedAccept[nqid]) then
                                                                     nbCode = "accept_skipped"
@@ -4202,10 +4398,16 @@ function State.GetReadyTurnInPlan(steps, cursor, player, pkey, toggles)
                                         end
                                     end
                                     if (not satisfied) and (not outleveled) then
-                                        if isDoneQ or (actE ~= nil) or vSimCompleted[qid] or vSimActive[qid] then
+                                        local isIncompElite = skipEliteNow
+                                            and sAct ~= "DUNGEON_PREP" and sAct ~= "DUNGEON_RUN"
+                                            and (not isDoneQ) and not (actE ~= nil and actE.isComplete == true)
+                                            and (not q.isDungeon) and ((q.isGroup == true) or (actE ~= nil and actE.isElite == true))
+                                        if isIncompElite and (actE ~= nil or vSimActive[qid]) then
+                                            bCode = "elite_solo"
+                                        elseif isDoneQ or (actE ~= nil) or vSimCompleted[qid] or vSimActive[qid] then
                                             bCode = nil
                                         elseif (not hasQdbNow) and (not q.requiredSkill) then
-                                            bCode = perfScratch.CheckInlineReadyElig(qid, q, virtExcluded, player, pLevel, maxQuestLv, vSimCompleted, completedMap, checkCompSlow)
+                                            bCode = perfScratch.CheckInlineReadyElig(qid, q, virtExcluded, player, pLevel, maxQuestLv, vSimCompleted, completedMap, checkCompSlow, skipEliteNow)
                                             if (not bCode) and (sAct == "COMPLETE" or sAct == "TURN_IN") then
                                                 if vSimBlockedAccept[qid] then
                                                     bCode = "accept_skipped"
@@ -4348,6 +4550,7 @@ function State.GetReadyTurnInPlan(steps, cursor, player, pkey, toggles)
                 classId = classId,
                 faction = faction,
                 consultQuestie = consultQuestie,
+                skipEliteNow = skipEliteNow,
                 useDynamic = useDynamic,
                 navAvail = navAvail,
                 mounted = curMounted,
@@ -5080,20 +5283,28 @@ local function ResolveChainEntryAction(entry, actKey)
     return info
 end
 
-local function MakeChainCacheKey(qid, zId, pLv, mOff)
+local function MakeChainCacheKey(qid, zId, pLv, mOff, skipEliteNow)
     local z = tonumber(zId) or 0
-    if z >= 0 and z < 8192 and mOff >= -8 and mOff <= 7 and qid > 0 and qid < 2000000 then
-        return ((qid * 8192 + z) * 128 + pLv) * 16 + (mOff + 8)
+    local se = skipEliteNow and 1 or 0
+    if z >= 0 and z < 8192 and mOff >= -8 and mOff <= 7 and qid > 0 and qid < 500000 then
+        return (((qid * 8192 + z) * 128 + pLv) * 16 + (mOff + 8)) * 2 + se
     end
-    return tostring(qid) .. ":" .. tostring(z) .. ":" .. tostring(pLv) .. ":" .. tostring(mOff)
+    return tostring(qid) .. ":" .. tostring(z) .. ":" .. tostring(pLv) .. ":" .. tostring(mOff) .. ":" .. tostring(se)
 end
 
-function perfScratch.IsChainNodeEligible(candId, candQ, player, anchorZoneId, pLevel, maxOff, completedMap, checkCompSlow, activeMap)
+function perfScratch.IsChainNodeEligible(candId, candQ, player, anchorZoneId, pLevel, maxOff, completedMap, checkCompSlow, activeMap, skipEliteNow)
     if not candQ then return false end
     if not State.IsEligibleForPlayer(candId, player) then return false end
     if anchorZoneId and not IsSameZoneChainQuest(candQ, anchorZoneId) then return false end
     local isDone = (completedMap[candId] == true) or (checkCompSlow ~= nil and checkCompSlow(candId, true))
-    local isAct = activeMap[candId] ~= nil
+    local actEntry = activeMap[candId]
+    local isAct = actEntry ~= nil
+    local isActReady = isAct and actEntry.isComplete == true
+    if not (isDone or isActReady) then
+        if skipEliteNow and State.IsQuestElite(candId, candQ) then
+            return false
+        end
+    end
     if not (isDone or isAct) then
         if State.IsQuestExcluded and State.IsQuestExcluded(candId, true) then
             return false
@@ -5136,10 +5347,11 @@ function State.GetChainProgressInfo(questId, player, toggles, action)
     toggles = toggles or (ns.charDB and ns.charDB.toggles) or {}
     local pLevel = tonumber(player and player.level) or 1
     local maxOff = State.GetEffectiveMaxLevelOffset(toggles)
+    local skipEliteNow = State.ShouldSkipEliteNow(player, toggles)
     local pZoneFallback = player and player.zoneId
     local anchorZoneId = targetQ.zoneId or pZoneFallback
     local actKey = (action == "ACCEPT" and "ACCEPT") or (action == "COMPLETE" and "COMPLETE") or "OTHER"
-    local baseKey = MakeChainCacheKey(questId, anchorZoneId, pLevel, maxOff)
+    local baseKey = MakeChainCacheKey(questId, anchorZoneId, pLevel, maxOff, skipEliteNow)
     local cachedEntry = chainProgressCache[baseKey]
     if cachedEntry ~= nil then
         if type(cachedEntry) == "number" then
@@ -5175,19 +5387,25 @@ function State.GetChainProgressInfo(questId, player, toggles, action)
                 local pq = quests[pid]
                 if pq and State.IsEligibleForPlayer(pid, player) and IsSameZoneChainQuest(pq, anchorZoneId) then
                     local pDone = (completedMap[pid] == true) or (checkCompSlow ~= nil and checkCompSlow(pid, true))
-                    if pDone or activeMap[pid] then
+                    local pAct = activeMap[pid]
+                    if pDone or (pAct and pAct.isComplete == true) then
                         prevId = pid
                         break
-                    elseif (tonumber(pq.minLevel) or 0) <= pLevel then
-                        local reqOff = (tonumber(pq.questLevel) or 0) - pLevel
-                        if reqOff <= maxOff then
-                            if reqOff > minValidOff then
-                                minValidOff = reqOff
-                            end
+                    elseif not (skipEliteNow and State.IsQuestElite(pid, pq)) then
+                        if pAct then
                             prevId = pid
                             break
-                        elseif reqOff - 1 < maxValidOff then
-                            maxValidOff = reqOff - 1
+                        elseif (tonumber(pq.minLevel) or 0) <= pLevel then
+                            local reqOff = (tonumber(pq.questLevel) or 0) - pLevel
+                            if reqOff <= maxOff then
+                                if reqOff > minValidOff then
+                                    minValidOff = reqOff
+                                end
+                                prevId = pid
+                                break
+                            elseif reqOff - 1 < maxValidOff then
+                                maxValidOff = reqOff - 1
+                            end
                         end
                     end
                 end
@@ -5219,7 +5437,7 @@ function State.GetChainProgressInfo(questId, player, toggles, action)
         stkTop = stkTop - 1
         if depth <= CHAIN_PROGRESS_MAX_DEPTH and not seen[cid] then
             local cq = quests[cid]
-            if perfScratch.IsChainNodeEligible(cid, cq, player, anchorZoneId, pLevel, maxOff, completedMap, checkCompSlow, activeMap) then
+            if perfScratch.IsChainNodeEligible(cid, cq, player, anchorZoneId, pLevel, maxOff, completedMap, checkCompSlow, activeMap, skipEliteNow) then
                 seen[cid] = true
                 chainLen = chainLen + 1
                 chain[chainLen] = cid
@@ -5288,7 +5506,7 @@ function State.GetChainProgressInfo(questId, player, toggles, action)
         local hiClamped = math.min(5, math.max(maxOff, maxValidOff))
         local negSpan = (loClamped + 8) * 16 + (hiClamped + 8)
         for o = loClamped, hiClamped do
-            local okKey = (o == maxOff) and baseKey or MakeChainCacheKey(questId, anchorZoneId, pLevel, o)
+            local okKey = (o == maxOff) and baseKey or MakeChainCacheKey(questId, anchorZoneId, pLevel, o, skipEliteNow)
             if chainProgressCache[okKey] == nil then
                 chainProgressCache[okKey] = negSpan
             end
@@ -5350,7 +5568,7 @@ function State.GetChainProgressInfo(questId, player, toggles, action)
                 }
                 local seedZone = (k == pos) and anchorZoneId or ckZone
                 for o = minValidOff, maxValidOff do
-                    local ckKey = (k == pos and o == maxOff) and baseKey or MakeChainCacheKey(ckId, seedZone, pLevel, o)
+                    local ckKey = (k == pos and o == maxOff) and baseKey or MakeChainCacheKey(ckId, seedZone, pLevel, o, skipEliteNow)
                     if chainProgressCache[ckKey] == nil then
                         chainProgressCache[ckKey] = entry
                     end
@@ -5394,11 +5612,13 @@ function State.DecorateStepChain(step, player, toggles)
     local decLv = tonumber(player and player.level) or 24
     local decQuestie = (toggles.consultQuestie ~= false)
     local decChains = (toggles.proactiveChains ~= false)
+    local decSkipElite = State.ShouldSkipEliteNow(player, toggles)
     if decCache.gen ~= dbQuestStateGeneration
         or decCache.playerRef ~= player
         or decCache.lv ~= decLv
         or decCache.questie ~= decQuestie
-        or decCache.chains ~= decChains then
+        or decCache.chains ~= decChains
+        or decCache.skipElite ~= decSkipElite then
         local prof = player and player.professions
         local decRace = tonumber(player and player.raceId) or 0
         local decClass = tonumber(player and player.classId) or 0
@@ -5413,7 +5633,8 @@ function State.DecorateStepChain(step, player, toggles)
             or decCache.skin ~= decSkin
             or decCache.lw ~= decLw
             or decCache.questie ~= decQuestie
-            or decCache.chains ~= decChains then
+            or decCache.chains ~= decChains
+            or decCache.skipElite ~= decSkipElite then
             decCache.byMaxOff = {}
             decCache.byStepBadge = {}
             decCache.epoch = decCache.epoch + 1
@@ -5426,6 +5647,7 @@ function State.DecorateStepChain(step, player, toggles)
             decCache.lw = decLw
             decCache.questie = decQuestie
             decCache.chains = decChains
+            decCache.skipElite = decSkipElite
         end
         decCache.playerRef = player
     end
@@ -5587,6 +5809,7 @@ local function BuildZoneFriendPivotPlan(steps, cursor, player, pkey, toggles, re
     local pX = player.x or 50
     local pY = player.y or 50
     local maxOffset = State.GetEffectiveMaxLevelOffset(toggles)
+    local skipEliteNow = State.ShouldSkipEliteNow(player, toggles)
     local completedMap, bulkSynced = State.GetCompletedReadOnly()
     local checkCompSlow = (not bulkSynced) and State.IsQuestCompleted or nil
     local function IsQDone(qid)
@@ -5615,26 +5838,36 @@ local function BuildZoneFriendPivotPlan(steps, cursor, player, pkey, toggles, re
     for qid, entry in pairs(activeQuests or {}) do
         if entry and not IsQDone(qid) then
             local q = data.quests and data.quests[qid]
-            local qz = (q and q.zoneId) or (recentAcceptedQuests[qid] and recentAcceptedQuests[qid].zoneId)
-            if (not qz) and State.ResolveQuestTurnin then
-                local r = State.ResolveQuestTurnin(qid)
-                qz = r and r.zoneId
-            end
-            if qz == pZone then
-                local wasRecent = recentAcceptedQuests[qid] ~= nil
-                AddSeed(qid, wasRecent)
+            if not (skipEliteNow and (not entry.isComplete) and State.IsQuestElite(qid, q)) then
+                local qz = (q and q.zoneId) or (recentAcceptedQuests[qid] and recentAcceptedQuests[qid].zoneId)
+                if (not qz) and State.ResolveQuestTurnin then
+                    local r = State.ResolveQuestTurnin(qid)
+                    qz = r and r.zoneId
+                end
+                if qz == pZone then
+                    local wasRecent = recentAcceptedQuests[qid] ~= nil
+                    AddSeed(qid, wasRecent)
+                end
             end
         end
     end
 
     for qid, rec in pairs(recentAcceptedQuests) do
         if rec and rec.zoneId == pZone and not IsQDone(qid) then
-            AddSeed(qid, true)
+            local rq = data.quests and data.quests[qid]
+            local rAct = activeQuests and activeQuests[qid]
+            if not (skipEliteNow and (not (rAct and rAct.isComplete)) and State.IsQuestElite(qid, rq)) then
+                AddSeed(qid, true)
+            end
         end
     end
     for qid, rec in pairs(recentChainFollowups) do
         if rec and rec.zoneId == pZone and not IsQDone(qid) then
-            AddSeed(qid, true)
+            local fq = data.quests and data.quests[qid]
+            local fAct = activeQuests and activeQuests[qid]
+            if not (skipEliteNow and (not (fAct and fAct.isComplete)) and State.IsQuestElite(qid, fq)) then
+                AddSeed(qid, true)
+            end
         end
     end
 
@@ -5661,6 +5894,7 @@ local function BuildZoneFriendPivotPlan(steps, cursor, player, pkey, toggles, re
                 if q and not IsGpsStepSkippedOrDone("gps:ACCEPT:" .. tostring(qid)) then
                     local qLv = tonumber(q.questLevel or q.minLevel) or pLevel
                     if qLv >= minAcceptedLv and (q.minLevel or 1) <= pLevel and qLv <= pLevel + maxOffset
+                        and not (skipEliteNow and State.IsQuestElite(qid, q))
                         and IsQuestInZoneChain(q, pZone, false) then
                         local d = (rec.travelSec or 0) / COORD_SEC_SCALE
                         if d <= GPS_FRIEND_NEAR_RADIUS then
@@ -5677,6 +5911,7 @@ local function BuildZoneFriendPivotPlan(steps, cursor, player, pkey, toggles, re
                 if q and not IsGpsStepSkippedOrDone("gps:ACCEPT:" .. tostring(qid)) then
                     local qLv = tonumber(q.questLevel or q.minLevel) or pLevel
                     if qLv >= minAcceptedLv and (q.minLevel or 1) <= pLevel and qLv <= pLevel + maxOffset
+                        and not (skipEliteNow and State.IsQuestElite(qid, q))
                         and IsQuestInZoneChain(q, pZone, false) then
                         local pt = GetQuestStepPoint(q, "ACCEPT")
                         local ptZone = pt and pt.zoneId
@@ -5708,7 +5943,12 @@ local function BuildZoneFriendPivotPlan(steps, cursor, player, pkey, toggles, re
         if not qid or poolSet[qid] or #poolList >= GPS_FRIEND_SCAN_CAP then return end
         if IsQDone(qid) then return end
         local q = data.quests and data.quests[qid]
-        if q and not activeQuests[qid] then
+        local actQ = activeQuests[qid]
+        local isActReady = actQ and actQ.isComplete == true
+        if skipEliteNow and (not isActReady) and State.IsQuestElite(qid, q) then
+            return
+        end
+        if q and not actQ then
             if (q.minLevel or 1) > pLevel or (q.questLevel or 0) > pLevel + maxOffset then
                 return
             end
@@ -5882,6 +6122,9 @@ local function BuildZoneFriendPivotPlan(steps, cursor, player, pkey, toggles, re
                                         blocked = true
                                     end
                                     if (not blocked) and (tonumber(q.questLevel) or 0) > maxQuestLv then
+                                        blocked = true
+                                    end
+                                    if (not blocked) and skipEliteNow and State.IsQuestElite(qid, q) then
                                         blocked = true
                                     end
                                     if (not blocked) and q.prereqIds and #q.prereqIds > 0 then
@@ -6131,6 +6374,7 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
     local skinRank = (prof and prof.skinningRank) or -1
     local lwRank = (prof and prof.leatherworkingRank) or -1
     local consultQuestie = (toggles.consultQuestie ~= false)
+    local skipEliteNow = State.ShouldSkipEliteNow(player, toggles)
     local navFieldAvail = (ns.Nav and ns.Nav.EnsureSingleSourceField and ns.Nav.IsAvailable and ns.Nav.IsAvailable()) and true or false
     local curMounted = (IsMounted and IsMounted()) and true or false
     local curNavEpoch = (ns.Nav and ns.Nav.GetCacheEpoch and ns.Nav.GetCacheEpoch()) or 0
@@ -6232,6 +6476,7 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
         and gCtx.classId == player.classId
         and gCtx.faction == player.faction
         and gCtx.navAvail == navFieldAvail
+        and gCtx.skipEliteNow == skipEliteNow
         and gCtx.offDbLocalSig == offDbLocalSig) then
         gCtx = {
             dbGen = dbQuestStateGeneration,
@@ -6246,6 +6491,7 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
             classId = player.classId,
             faction = player.faction,
             navAvail = navFieldAvail,
+            skipEliteNow = skipEliteNow,
             offDbLocalSig = offDbLocalSig,
             byCursorKey = {},
         }
@@ -6372,11 +6618,13 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
         for qid, entry in pairs(activeQuests or {}) do
             if entry and not ((completedMap[qid] == true) or (checkCompSlow ~= nil and checkCompSlow(qid, true))) then
                 local q = questsData and questsData[qid]
-                local qz = (q and q.zoneId) or (recentAcceptedQuests[qid] and recentAcceptedQuests[qid].zoneId)
-                if qz == pZone then
-                    activeLocalSet[qid] = true
-                    if (not inWindowByQidBase[qid]) and (not entry.isComplete) then
-                        extraLocalQuests[#extraLocalQuests + 1] = qid
+                if not (skipEliteNow and (not entry.isComplete) and State.IsQuestElite(qid, q)) then
+                    local qz = (q and q.zoneId) or (recentAcceptedQuests[qid] and recentAcceptedQuests[qid].zoneId)
+                    if qz == pZone then
+                        activeLocalSet[qid] = true
+                        if (not inWindowByQidBase[qid]) and (not entry.isComplete) then
+                            extraLocalQuests[#extraLocalQuests + 1] = qid
+                        end
                     end
                 end
             end
@@ -6501,7 +6749,9 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
     for fid, rec in pairs(recentChainFollowups or {}) do
         if type(rec) == "table" and ((not rec.zoneId) or rec.zoneId == pZone) then
             local fq = questsData and questsData[fid]
-            if fq and IsSameZoneChainQuest(fq, pZone) and not ((completedMap[fid] == true) or (checkCompSlow ~= nil and checkCompSlow(fid, true))) then
+            if fq and IsSameZoneChainQuest(fq, pZone)
+                and not (skipEliteNow and State.IsQuestElite(fid, fq))
+                and not ((completedMap[fid] == true) or (checkCompSlow ~= nil and checkCompSlow(fid, true))) then
                 directFollowupSet[fid] = true
                 qTail = perfScratch.EnqueueGpsChain(fid, 1, rec.fromQid or fid, true, chainSeen, qTail)
             end
@@ -6535,6 +6785,7 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
                 local minLv = tonumber(cq.minLevel) or 0
                 local qLv = tonumber(cq.questLevel) or 0
                 if (not isDone) and (not excl) and State.IsEligibleForPlayer(nQid, player)
+                    and not (skipEliteNow and (not (isAct and activeQuests[nQid] and activeQuests[nQid].isComplete)) and State.IsQuestElite(nQid, cq))
                     and IsSameZoneChainQuest(cq, pZone)
                     and (isAct or (minLv <= pLevel and qLv <= (pLevel + maxOff))) then
                     canTraverse = true
@@ -6759,9 +7010,11 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
                     canClampOff = false
                     break
                 end
-                local reqOff = (tonumber(q.questLevel) or 0) - pLevel
-                if reqOff > maxReqOff then
-                    maxReqOff = reqOff
+                if not (skipEliteNow and iAct ~= "DUNGEON_PREP" and iAct ~= "DUNGEON_RUN" and (not q.isDungeon) and q.isGroup == true and activeQuests[sq] == nil and completedMap[sq] ~= true) then
+                    local reqOff = (tonumber(q.questLevel) or 0) - pLevel
+                    if reqOff > maxReqOff then
+                        maxReqOff = reqOff
+                    end
                 end
             end
         end
@@ -6782,6 +7035,7 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
             skinRank = skinRank,
             lwRank = lwRank,
             consultQuestie = consultQuestie,
+            skipEliteNow = skipEliteNow,
             solLiveGen = -1,
         }
         gbw.winByChainSig[chainSig] = ws
@@ -6794,12 +7048,13 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
     local customDoneMap = ns.charDB and ns.charDB.completedCustomSteps
     local hasCustomDone = (type(customDoneMap) == "table" and next(customDoneMap) ~= nil)
     local hasQdbNow = (consultQuestie and GetQuestieDB() ~= nil) and true or false
-    if ws.skinRank ~= skinRank or ws.lwRank ~= lwRank or ws.consultQuestie ~= consultQuestie then
+    if ws.skinRank ~= skinRank or ws.lwRank ~= lwRank or ws.consultQuestie ~= consultQuestie or ws.skipEliteNow ~= skipEliteNow then
         ws.staticDagByOff = {}
         ws.planByOff = {}
         ws.skinRank = skinRank
         ws.lwRank = lwRank
         ws.consultQuestie = consultQuestie
+        ws.skipEliteNow = skipEliteNow
     elseif ws.solLiveGen ~= perfScratch.gpsLiveStateGen
         or ws.solRecSeq ~= recentAcceptedSeq
         or ws.solPX ~= pX
@@ -6966,7 +7221,15 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
                             local iAct = item.action
                             if q and (iAct == "ACCEPT" or iAct == "COMPLETE" or iAct == "TURN_IN" or iAct == "DUNGEON_PREP" or iAct == "DUNGEON_RUN") then
                                 usedInlineDag = true
-                                if vCompleted[qid] or vActive[qid] or activeQuests[qid] ~= nil or (completedMap[qid] == true) or (checkCompSlow ~= nil and checkCompSlow(qid, true)) then
+                                local isDoneQ = vCompleted[qid] or (completedMap[qid] == true) or (checkCompSlow ~= nil and checkCompSlow(qid, true))
+                                local actQ = activeQuests[qid]
+                                local vAct = vActive[qid]
+                                local isActReady = (actQ and actQ.isComplete == true)
+                                if isDoneQ then
+                                    bCode = nil
+                                elseif skipEliteNow and iAct ~= "DUNGEON_PREP" and iAct ~= "DUNGEON_RUN" and (not isActReady) and (not q.isDungeon) and ((q.isGroup == true) or (actQ ~= nil and actQ.isElite == true)) and (actQ ~= nil or vAct ~= nil) then
+                                    bCode = "elite_solo"
+                                elseif vAct or actQ ~= nil then
                                     bCode = nil
                                 else
                                     if q.exclusiveTo then
@@ -6988,6 +7251,9 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
                                     end
                                     if (not bCode) and (tonumber(q.questLevel) or 0) > maxQuestLv then
                                         bCode = "quest_level_too_high"
+                                    end
+                                    if (not bCode) and skipEliteNow and iAct ~= "DUNGEON_PREP" and iAct ~= "DUNGEON_RUN" and (not q.isDungeon) and (q.isGroup == true) then
+                                        bCode = "elite_solo"
                                     end
                                     if (not bCode) and q.prereqIds and #q.prereqIds > 0 then
                                         local pids = q.prereqIds
@@ -7031,7 +7297,8 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
                             dagBlocked = false
                         elseif bCode == "quest_level_too_high" or bCode == "min_level"
                             or bCode == "ineligible_character" or bCode == "wrong_profession"
-                            or bCode == "missing_profession" or bCode == "skill_rank_too_low" then
+                            or bCode == "missing_profession" or bCode == "skill_rank_too_low"
+                            or bCode == "elite_solo" then
                             dagState[i] = "hard"
                             dagBlocked = true
                         else
@@ -7315,6 +7582,7 @@ function State.GetLocationAdaptedPlan(steps, cursor, player, pkey, toggles, read
     end
     local qx = player.x and math.floor(player.x * 0.5) or -1
     local qy = player.y and math.floor(player.y * 0.5) or -1
+    local skipEliteNow = State.ShouldSkipEliteNow(player, toggles)
     local locSig = State.GetLocationPlanSignature()
     if (not locationFrozen or lastAliveLocation ~= nil)
         and locationPlanCache
@@ -7324,6 +7592,7 @@ function State.GetLocationAdaptedPlan(steps, cursor, player, pkey, toggles, read
         and locationPlanCache.zoneId == pZone
         and locationPlanCache.qx == qx
         and locationPlanCache.qy == qy
+        and locationPlanCache.skipEliteNow == skipEliteNow
         and locationPlanCache.locSig == locSig then
         return locationPlanCache.plan
     end
@@ -7352,9 +7621,34 @@ function State.GetLocationAdaptedPlan(steps, cursor, player, pkey, toggles, read
     locationPlanCache.zoneId = pZone
     locationPlanCache.qx = qx
     locationPlanCache.qy = qy
+    locationPlanCache.skipEliteNow = skipEliteNow
     locationPlanCache.locSig = locSig
     locationPlanCache.plan = plan
     return plan
+end
+
+function perfScratch.HasEliteDeferredPrereq(questId, player, toggles, visited)
+    if not questId then return false end
+    visited = visited or {}
+    if visited[questId] then return false end
+    visited[questId] = true
+    local data = ns.GetData()
+    local q = data and data.quests and data.quests[questId]
+    if not q or type(q.prereqIds) ~= "table" or #q.prereqIds == 0 then
+        return false
+    end
+    for _, pid in ipairs(q.prereqIds) do
+        if not State.IsQuestCompleted(pid, true) then
+            local pq = data.quests[pid]
+            local code = State.GetQuestBlockReason(pid, (pq and pq.isDungeon) and "DUNGEON_PREP" or "ACCEPT", player, nil, nil, toggles, FAST_BLOCK_OPTS)
+            if code == "elite_solo" then
+                return true
+            elseif code == "missing_prereq" and perfScratch.HasEliteDeferredPrereq(pid, player, toggles, visited) then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 function State.AdvanceRouteCursor()
@@ -7408,6 +7702,7 @@ function State.AdvanceRouteCursor()
         end
         if rewindIdx and rewindIdx < cursor then
             cursor = rewindIdx
+            lastGpsTargetKey = nil
             for k in pairs(deferred) do
                 if type(k) == "number" and k >= rewindIdx then
                     deferred[k] = nil
@@ -7479,11 +7774,20 @@ function State.AdvanceRouteCursor()
                     if resolved then
                         break
                     end
+                    if perfScratch.HasEliteDeferredPrereq(step.questId, player, toggles) then
+                        ns.charDB.deferredSteps = ns.charDB.deferredSteps or {}
+                        ns.charDB.deferredSteps[pkey] = ns.charDB.deferredSteps[pkey] or {}
+                        ns.charDB.deferredSteps[pkey][cursor] = true
+                        deferred = ns.charDB.deferredSteps[pkey]
+                    elseif deferred then
+                        deferred[cursor] = nil
+                    end
                     RecordBlockedStep(step, cursor, pkey, blockCode, blockReason .. " (prereq locked)")
                     cursor = cursor + 1
                 elseif blockCode then
-                    if (blockCode == "quest_level_too_high" or blockCode == "min_level")
-                        and ((step.expectedLevel or 0) <= deferCapLv) then
+                    if ((blockCode == "quest_level_too_high" or blockCode == "min_level")
+                        and ((step.expectedLevel or 0) <= deferCapLv))
+                        or blockCode == "elite_solo" then
                         ns.charDB.deferredSteps = ns.charDB.deferredSteps or {}
                         ns.charDB.deferredSteps[pkey] = ns.charDB.deferredSteps[pkey] or {}
                         ns.charDB.deferredSteps[pkey][cursor] = true
@@ -7688,6 +7992,7 @@ function State.GetCurrentStep(playerHint)
     local tBags = (toggles.prioritizeBags ~= false)
     local tGear = (toggles.prioritizeClassGear ~= false and toggles.prioritizeRogueGear ~= false)
     local tSkin = (toggles.prioritizeSkinningLW ~= false)
+    local tSkipElite = (toggles.skipEliteSolo ~= false)
 
     local cs = currentStepCache
     if cs
@@ -7706,6 +8011,7 @@ function State.GetCurrentStep(playerHint)
         and cs.y == player.y
         and cs.isDead == player.isDead
         and cs.onTaxi == player.onTaxi
+        and cs.inGroup == player.inGroup
         and cs.raceId == player.raceId
         and cs.classId == player.classId
         and cs.faction == player.faction
@@ -7723,6 +8029,7 @@ function State.GetCurrentStep(playerHint)
         and cs.tBags == tBags
         and cs.tGear == tGear
         and cs.tSkin == tSkin
+        and cs.tSkipElite == tSkipElite
         and cs.wXp == wXp
         and cs.wTrv == wTrv
         and cs.wDun == wDun
@@ -7753,6 +8060,7 @@ function State.GetCurrentStep(playerHint)
     csOut.y = player.y
     csOut.isDead = player.isDead
     csOut.onTaxi = player.onTaxi
+    csOut.inGroup = player.inGroup
     csOut.raceId = player.raceId
     csOut.classId = player.classId
     csOut.faction = player.faction
@@ -7770,6 +8078,7 @@ function State.GetCurrentStep(playerHint)
     csOut.tBags = tBags
     csOut.tGear = tGear
     csOut.tSkin = tSkin
+    csOut.tSkipElite = tSkipElite
     csOut.wXp = wXp
     csOut.wTrv = wTrv
     csOut.wDun = wDun
@@ -8213,6 +8522,7 @@ function State.JumpToStep(idx)
     ns.charDB.completedCustomSteps[key] = nil
     ns.charDB.stepIndex = idx
     manualCursorIndex = idx
+    lastGpsTargetKey = nil
     State.Refresh("MANUAL_JUMP")
 end
 
@@ -8383,6 +8693,7 @@ function State.Initialize()
     State.BuildIndexes()
     State.RefreshCompletedBulk()
     local pInfo = State.GetPlayerInfo()
+    perfScratch.lastObservedInGroup = (pInfo and pInfo.inGroup == true)
     SyncLiveCharIdentity(pInfo)
     State.ScanQuestLog()
 end
@@ -8475,6 +8786,14 @@ function State.Refresh(reason, arg1, arg2)
             refreshSkipped = refreshSkipped + 1
             return
         end
+    elseif reason == "GROUP_ROSTER_UPDATE" or reason == "PARTY_MEMBERS_CHANGED" or reason == "RAID_ROSTER_UPDATE" then
+        if not State.HasGroupStatusChanged() then
+            refreshSkipped = refreshSkipped + 1
+            return
+        end
+        lastGpsTargetKey = nil
+    elseif reason == "TOGGLE_skipEliteSolo" then
+        lastGpsTargetKey = nil
     end
 
     refreshExecuted = refreshExecuted + 1
@@ -8576,6 +8895,7 @@ function State.Refresh(reason, arg1, arg2)
         State.RefreshCompletedBulk()
     end
     local pInfo = State.GetPlayerInfo()
+    perfScratch.lastObservedInGroup = (pInfo and pInfo.inGroup == true)
     SyncLiveCharIdentity(pInfo)
     if (not isLocationOnly) and not (reason == "MAX_LEVEL_CHANGED" and activeLogInitialized) then
         State.ScanQuestLog()

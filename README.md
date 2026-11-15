@@ -10,6 +10,7 @@
 - **Proactive Chain & Turn-In Optimization:** Expands full quest chains ahead of completion (`[Chain X/Y]`), prioritizes nearby ready turn-ins (`[Ready Turn-In]`), and defers distant turn-ins until aligned.
 - **GPS Auto-Reorder & Friend-Meetup Pivots:** Near-realtime intra-zone step reordering and off-route friend meetup chain detection (`/fqp gps`, `/fqp reorder`).
 - **Configurable Max Quest Level Offset:** Adjustable `-3` to `+5` quest level ceiling via UI slider or `/fqp maxlevel`.
+- **Skip Elite Quests Unless Grouped:** Automatically defers open-world elite quests and their follow-ups while solo (`Skip Elite (Solo)` toggle or `/fqp elite`), unlocking them immediately when you join a party or raid while always keeping completed turn-ins and dungeon steps active.
 - **Low-CPU Event Gating:** Suppresses redundant routing recalculations while stationary, looting/skinning, or dead/ghost.
 
 ---
@@ -19,9 +20,9 @@
 You can download a prebuilt release binary directly without cloning the repo:
 
 1. Download the latest archive:
-   - Direct asset (`v1.0.0`): [`ForeverQuestPath-v1.0.0.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.0.0.zip)
+   - Direct asset (`v1.1.0`): [`ForeverQuestPath-v1.1.0.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.1.0.zip)
    - All releases: [`github.com/sebmak/ForeverQuestPath/releases/latest`](https://github.com/sebmak/ForeverQuestPath/releases/latest)
-2. Extract `ForeverQuestPath-v1.0.0.zip` into your WoW Forever AddOns directory:
+2. Extract `ForeverQuestPath-v1.1.0.zip` into your WoW Forever AddOns directory:
    - **macOS:** `/Applications/World of Warcraft/_forever_/Interface/AddOns/`
    - **Windows:** `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\`
 3. Confirm the extracted folder structure contains:

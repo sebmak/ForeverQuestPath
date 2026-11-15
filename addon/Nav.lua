@@ -13,11 +13,14 @@
 --      3x3 / 5x5 walkable fallback ring and component matching so routes never cut
 --      through mountains, cliffs, or oceans.
 --   4. Reverse eligible-quest index nodeToEligible is rebuilt strictly when
---      questStateGeneration (or player level/maxlevel/faction/race/class/profile)
---      changes -- NEVER on 1.5s GPS_MOVED ticks or virtual lookahead steps with
---      skipIndexRebuild=true -- on top of zero-GC per-character minLevel buckets
---      (staticLevelBuckets), cached nearest-quest pool (nearestCache), and exact
---      settledBoundSec partial single-source field reuse (singleCache).
+--      questStateGeneration (or player level/maxlevel/faction/race/class/
+--      profile/group or skipEliteSolo state) changes -- NEVER on 1.5s
+--      GPS_MOVED ticks or virtual lookahead steps with skipIndexRebuild=true --
+--      on top of zero-GC per-character minLevel buckets (staticLevelBuckets),
+--      excluding solo-skipped open-world elite "s"/"o" quests while preserving
+--      ready turn-ins ("t") and dungeon quests, cached nearest-quest pool
+--      (nearestCache), and exact settledBoundSec partial single-source field
+--      reuse (singleCache).
 --   5. RecordTaxiNodes only invalidates path caches and reports changed=true when
 --      at least one previously unknown flight master is discovered, while
 --      Nav.GetCacheEpoch() exposes a monotonic epoch bumped on every cache clear.
@@ -1538,10 +1541,12 @@ function Nav.EnsureEligibleIndex(data, player)
     local classFile = tostring((player and player.classFile) or "ROGUE")
     local profile = tostring((ns.charDB and ns.charDB.activeProfile) or "balanced")
     local toggles = (ns.charDB and ns.charDB.toggles) or {}
+    local skipEliteNow = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(player, toggles) or (toggles.skipEliteSolo ~= false and not (player and player.inGroup))
     local togglesMask = ((toggles.includeDungeons ~= false) and 1 or 0)
         + ((toggles.consultQuestie ~= false) and 2 or 0)
         + ((toggles.includeSkinning ~= false) and 4 or 0)
         + ((toggles.includeGoldBags ~= false) and 8 or 0)
+        + (skipEliteNow and 16 or 0)
 
     if eligibleMeta.valid
         and eligibleMeta.stateGen == stateGen
@@ -1599,8 +1604,11 @@ function Nav.EnsureEligibleIndex(data, player)
         activeSeenStamp[qid] = aStamp
         local q = questsMap[qid]
         if q and (not aEntry.isFailed) and not (completedCheck and completedCheck(qid, true)) then
-            local roleCode = (aEntry.isComplete == true) and "t" or "o"
-            pCount, uCount, addedCount = RegisterQuestToIndex(nav, questAnchors, qid, q, roleCode, classFile, pCount, uCount, addedCount)
+            if aEntry.isComplete == true then
+                pCount, uCount, addedCount = RegisterQuestToIndex(nav, questAnchors, qid, q, "t", classFile, pCount, uCount, addedCount)
+            elseif not (skipEliteNow and State and State.IsQuestElite and State.IsQuestElite(qid, q)) then
+                pCount, uCount, addedCount = RegisterQuestToIndex(nav, questAnchors, qid, q, "o", classFile, pCount, uCount, addedCount)
+            end
         end
     end
 
@@ -1617,7 +1625,7 @@ function Nav.EnsureEligibleIndex(data, player)
                 if q and (qLv == 0 or qLv <= pMaxLevel) then
                     local blocked
                     if fastNavBlocked then
-                        blocked = fastNavBlocked(qid, q, prof)
+                        blocked = fastNavBlocked(qid, q, prof, skipEliteNow)
                     else
                         blocked = (blockCheck and blockCheck(qid, q.isDungeon and "DUNGEON_PREP" or "ACCEPT", player, nil, nil, toggles, FAST_NAV_BLOCK_OPTS)) ~= nil
                     end

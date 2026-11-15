@@ -7,8 +7,9 @@
 --      [Chain X/Y] tags, and Ready Turn-Ins counter), 5-Weight Balance
 --      Sliders, Max Quest Level Offset Slider (-3..+5, default +2) with
 --      prevNonRedMaxLevelOffset preservation across Allow Red (+5) toggles,
---      Multi-Race/Class Selector, Auto-Reorder (GPS) & Skinning/LW Toggles,
---      Dungeon Unlocks & Special Rewards, and Diagnostics/Settings window (/fqp).
+--      Multi-Race/Class Selector, Auto-Reorder (GPS), Skip Elite (Solo) &
+--      Skinning/LW Toggles, Dungeon Unlocks & Special Rewards, and
+--      Diagnostics/Settings window (/fqp).
 --   2. Uses fixed-viewport pooled ScrollFrame + vertical Slider lists (<= 22
 --      row frames per list, O(1) frame allocation), pooled baseRowPool and
 --      overlayRowPool row descriptor reuse across rebuilds, preservation of
@@ -18,8 +19,8 @@
 --      displayList using integer ACTION_DEDUP_CODE keys, per-generation tab
 --      model caching, dirty-checked RenderViewport / BindRouteRow / controls /
 --      labels, reusable routeMidParts scratch buffer, startIdx-independent &
---      locFrozen-keyed (routeReadySig-independent) remainingHorizonCache with
---      parallel qids/qLvs/reqSkills/actCodes arrays + binary search, high-level
+--      remainingHorizonCache with parallel qids/qLvs/reqSkills/actCodes/
+--      hasPrereqs/isChain arrays + binary search, high-level exclusiveTo &
 --      exclusiveTo & completed/outleveled TRAVEL pruning, ordered
 --      routeBefore/routeAfter anchor merging, hoisted EvalHorizonFallbackStep
 --      keeping the loopPos loop trace-clean with string.find ready-count scan,
@@ -111,6 +112,8 @@ local remainingHorizonCache = {
     qLvs = {},
     reqSkills = {},
     actCodes = {},
+    hasPrereqs = {},
+    isChain = {},
     blockedAccept = {},
 }
 local routeTabCache = { key = nil, displayList = {}, summaryText = "" }
@@ -148,6 +151,7 @@ local routeScratch = {
     ctxDecorateMap = nil,
     ctxHasSkipped = false,
     ctxHasQdbGlobal = false,
+    ctxSkipEliteNow = false,
     ctxLocFrozen = false,
     ctxMaxTravelLv = 0,
     ctxSatFn = nil,
@@ -523,6 +527,8 @@ function Window.GetSnapshot()
         readyTurnIns = ns.State.GetReadyTurnInQuests and ns.State.GetReadyTurnInQuests() or {},
         readyTurnInCount = ns.State.GetReadyTurnInCount and ns.State.GetReadyTurnInCount() or 0,
         locationReorder = (toggles.locationReorder ~= false),
+        skipEliteSolo = (toggles.skipEliteSolo ~= false),
+        inGroup = (player and player.inGroup == true),
         locationPlanMode = meta and meta.locationPlan and meta.locationPlan.mode or nil,
         routeRows = (rCache and rCache.displayList) or {},
         routeSummary = (rCache and rCache.summaryText) or "",
@@ -965,6 +971,9 @@ local function IsStepAlwaysNonActionableRem(s)
     if rs.ctxCompletedMap[nqid] == true then return true end
     local isCompFn = rs.ctxIsCompFn
     if rs.ctxActiveMap[nqid] ~= nil or (isCompFn ~= nil and isCompFn(nqid, true)) then return false end
+    if rs.ctxSkipEliteNow and (nAct ~= "DUNGEON_PREP" and nAct ~= "DUNGEON_RUN") and nq.isGroup == true and not nq.isDungeon then
+        return true
+    end
     if type(s.expectedLevel) == "number" then
         local pLv = rs.ctxPLv
         local isDung = (nq.isDungeon == true) or (nAct == "DUNGEON_RUN")
@@ -1130,7 +1139,14 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                         done = isDoneQ
                     end
                     if (routeFilter == "all") or ((not isSuppressed) and (not done)) then
-                        if isDoneQ or (actE ~= nil) or simCompleted[qid] or vActive[qid] then
+                        local isEliteSkip = rs.ctxSkipEliteNow and (stAct ~= "DUNGEON_PREP" and stAct ~= "DUNGEON_RUN")
+                            and (not q.isDungeon) and ((q.isGroup == true) or (actE ~= nil and actE.isElite == true))
+                        local isActReady = (actE ~= nil and actE.isComplete == true)
+                        if isDoneQ then
+                            blockCode, blockReason = nil, nil
+                        elseif isEliteSkip and (actE ~= nil or vActive[qid]) and (not isActReady) then
+                            blockCode, blockReason = "elite_solo", nil
+                        elseif (actE ~= nil) or simCompleted[qid] or vActive[qid] then
                             blockCode, blockReason = nil, nil
                         elseif (routeFilter ~= "all") and (not hasQdbGlobal) and (not q.requiredSkill) then
                             local checkElig = not isSafeElig
@@ -1142,6 +1158,8 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                                 blockCode = "min_level"
                             elseif (tonumber(q.questLevel) or 0) > maxQuestLv then
                                 blockCode = "quest_level_too_high"
+                            elseif isEliteSkip then
+                                blockCode = "elite_solo"
                             elseif q.prereqIds and #q.prereqIds > 0 then
                                 local pids = q.prereqIds
                                 if q.prereqMode == "any" then
@@ -1274,7 +1292,14 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                             if (not nsSkip) and (not nsDone) then
                                 local nsBlocked = false
                                 if nSingle then
-                                    if nDoneQ or (nActE ~= nil) or simCompleted[nqid] or vActive[nqid] then
+                                    local nEliteSkip = rs.ctxSkipEliteNow and (nAct ~= "DUNGEON_PREP" and nAct ~= "DUNGEON_RUN")
+                                        and (not nq.isDungeon) and ((nq.isGroup == true) or (nActE ~= nil and nActE.isElite == true))
+                                    local nActReady = (nActE ~= nil and nActE.isComplete == true)
+                                    if nDoneQ then
+                                        nsBlocked = false
+                                    elseif nEliteSkip and (nActE ~= nil or vActive[nqid]) and (not nActReady) then
+                                        nsBlocked = true
+                                    elseif (nActE ~= nil) or simCompleted[nqid] or vActive[nqid] then
                                         nsBlocked = false
                                     elseif (not hasQdbGlobal) and (not nq.requiredSkill) then
                                         if nVirtExcl then
@@ -1282,6 +1307,8 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                                         elseif not ns.State.IsEligibleForPlayer(nqid, player) then
                                             nsBlocked = true
                                         elseif (tonumber(nq.minLevel) or 1) > pLv or (tonumber(nq.questLevel) or 0) > maxQuestLv then
+                                            nsBlocked = true
+                                        elseif nEliteSkip then
                                             nsBlocked = true
                                         elseif nq.prereqIds and #nq.prereqIds > 0 then
                                             local pids = nq.prereqIds
@@ -1456,8 +1483,9 @@ ComputeRouteTabCache = function(playerHint)
         tostring(locFirst and (locFirst.gpsStepKey or locFirst.origRouteIdx or locFirst.questId or locFirst.title) or ""),
         tostring(locSecond and (locSecond.gpsStepKey or locSecond.origRouteIdx or locSecond.questId or locSecond.title) or ""))
     local cursorIdx = tonumber(meta and meta.stepIndex) or tonumber(ns.charDB and ns.charDB.stepIndex) or 1
+    local skipEliteNow = (ns.State.ShouldSkipEliteNow and ns.State.ShouldSkipEliteNow(player, t)) or (t.skipEliteSolo ~= false and not (player and player.inGroup))
     local baseZoneKey = (routeFilter == "zone" or routeReadyCount > 0) and tostring(player.zoneId or 0) or "any"
-    local baseKey = string.format("%d:%s:%s:%s:%s:%s:%s:%d:%s:%d:%d:%s:%d:%d",
+    local baseKey = string.format("%d:%s:%s:%s:%s:%s:%s:%d:%s:%d:%d:%s:%d:%d:%s",
         routeStaticSeq,
         tostring(activeKey),
         tostring(isDynamic),
@@ -1471,7 +1499,8 @@ ComputeRouteTabCache = function(playerHint)
         maxOffset,
         routeReadySig,
         cursorIdx,
-        dbQuestGen)
+        dbQuestGen,
+        tostring(skipEliteNow))
     local cacheKey = string.format("%s:%d:%s:%s:%s",
         baseKey,
         questGen,
@@ -1597,6 +1626,7 @@ ComputeRouteTabCache = function(playerHint)
                 routeScratch.ctxDecorateMap = decorateMap
                 routeScratch.ctxHasSkipped = hasSkipped
                 routeScratch.ctxHasQdbGlobal = hasQdbGlobal
+                routeScratch.ctxSkipEliteNow = skipEliteNow
                 routeScratch.ctxLocFrozen = locFrozen
                 routeScratch.ctxMaxTravelLv = maxTravelLv
                 routeScratch.ctxSatFn = satFn
@@ -1610,9 +1640,11 @@ ComputeRouteTabCache = function(playerHint)
                 local hQLvs = nil
                 local hReqSkills = nil
                 local hActCodes = nil
+                local hHasPrereqs = nil
+                local hIsChain = nil
                 local hCount = 0
                 if useHorizon then
-                    local horizonKey = string.format("%d:%s:%d:%s:%d:%d:%s:%d:%s:%d:%s:%s",
+                    local horizonKey = string.format("%d:%s:%d:%s:%d:%d:%s:%d:%s:%d:%s:%s:%s",
                         routeStaticSeq,
                         tostring(pkey),
                         pLv,
@@ -1624,13 +1656,16 @@ ComputeRouteTabCache = function(playerHint)
                         tostring(player.classFile or "ROGUE"),
                         tonumber(player.classId) or 0,
                         tostring(locFrozen),
-                        tostring(hasSkipped))
+                        tostring(hasSkipped),
+                        tostring(skipEliteNow))
                     hIndices = remainingHorizonCache.indices
                     hSafeElig = remainingHorizonCache.safeElig
                     hQids = remainingHorizonCache.qids
                     hQLvs = remainingHorizonCache.qLvs
                     hReqSkills = remainingHorizonCache.reqSkills
                     hActCodes = remainingHorizonCache.actCodes
+                    hHasPrereqs = remainingHorizonCache.hasPrereqs
+                    hIsChain = remainingHorizonCache.isChain
                     if remainingHorizonCache.key ~= horizonKey or remainingHorizonCache.stepsRef ~= steps then
                         local hBlockedAccept = remainingHorizonCache.blockedAccept
                         WipeMap(hBlockedAccept)
@@ -1644,6 +1679,8 @@ ComputeRouteTabCache = function(playerHint)
                             local safeQLv = -1
                             local safeReqSkill = false
                             local safeActCode = 0
+                            local safeHasPrereqs = false
+                            local safeIsChain = false
                             if cst then
                                 local cAct = cst.action or "ACCEPT"
                                 if cAct == "TRAVEL" then
@@ -1725,7 +1762,8 @@ ComputeRouteTabCache = function(playerHint)
                                                 local eligOk = ns.State.IsEligibleForPlayer(cqid, player)
                                                 local minLvOk = (tonumber(cq.minLevel) or 1) <= pLv
                                                 local cqLevel = tonumber(cq.questLevel) or 0
-                                                local cAlwaysBlocked = (cqLevel > absMaxQuestLv) or (not minLvOk) or (not eligOk)
+                                                local eliteSkipped = skipEliteNow and (cAct ~= "DUNGEON_PREP" and cAct ~= "DUNGEON_RUN") and (cq.isGroup == true and not cq.isDungeon)
+                                                local cAlwaysBlocked = (cqLevel > absMaxQuestLv) or (not minLvOk) or (not eligOk) or eliteSkipped
                                                 if cOutleveled or cAlwaysBlocked then
                                                     keep = false
                                                     if cAct == "ACCEPT" or (cAct == "DUNGEON_PREP" and cst.prepMode == "accept") then
@@ -1736,6 +1774,8 @@ ComputeRouteTabCache = function(playerHint)
                                                     safeQid = cqid
                                                     safeQLv = cqLevel
                                                     safeReqSkill = (cq.requiredSkill ~= nil)
+                                                    safeHasPrereqs = (cq.prereqIds ~= nil and #cq.prereqIds > 0)
+                                                    safeIsChain = safeHasPrereqs or (cq.nextQuestIds ~= nil and #cq.nextQuestIds > 0)
                                                     if cAct == "ACCEPT" or (cAct == "DUNGEON_PREP" and cst.prepMode == "accept") then
                                                         safeActCode = 1
                                                     elseif cAct == "COMPLETE" then
@@ -1765,6 +1805,8 @@ ComputeRouteTabCache = function(playerHint)
                                 hQLvs[hCount] = isSafeSingle and safeQLv or -1
                                 hReqSkills[hCount] = isSafeSingle and safeReqSkill or false
                                 hActCodes[hCount] = isSafeSingle and safeActCode or 0
+                                hHasPrereqs[hCount] = isSafeSingle and safeHasPrereqs or false
+                                hIsChain[hCount] = isSafeSingle and safeIsChain or false
                             end
                         end
                         for trim = hCount + 1, #hIndices do
@@ -1774,6 +1816,8 @@ ComputeRouteTabCache = function(playerHint)
                             hQLvs[trim] = nil
                             hReqSkills[trim] = nil
                             hActCodes[trim] = nil
+                            hHasPrereqs[trim] = nil
+                            hIsChain[trim] = nil
                         end
                         remainingHorizonCache.key = horizonKey
                         remainingHorizonCache.stepsRef = steps
@@ -1888,27 +1932,29 @@ ComputeRouteTabCache = function(playerHint)
                             else
                                 local blockCode = nil
                                 if (not isSuppressed) and (not simCompleted[qid]) and (not vActive[qid]) then
-                                    local q = quests[qid]
-                                    local pids = q and q.prereqIds
-                                    if pids and #pids > 0 then
-                                        if q.prereqMode == "any" then
-                                            local anyDone = false
-                                            for pi = 1, #pids do
-                                                local pid = pids[pi]
-                                                if simCompleted[pid] or completedMap[pid] or (isCompFn and isCompFn(pid, true)) then
-                                                    anyDone = true
-                                                    break
+                                    if hHasPrereqs[loopPos] then
+                                        local q = quests[qid]
+                                        local pids = q and q.prereqIds
+                                        if pids and #pids > 0 then
+                                            if q.prereqMode == "any" then
+                                                local anyDone = false
+                                                for pi = 1, #pids do
+                                                    local pid = pids[pi]
+                                                    if simCompleted[pid] or completedMap[pid] or (isCompFn and isCompFn(pid, true)) then
+                                                        anyDone = true
+                                                        break
+                                                    end
                                                 end
-                                            end
-                                            if not anyDone then
-                                                blockCode = "missing_prereq"
-                                            end
-                                        else
-                                            for pi = 1, #pids do
-                                                local pid = pids[pi]
-                                                if not (simCompleted[pid] or completedMap[pid] or (isCompFn and isCompFn(pid, true))) then
+                                                if not anyDone then
                                                     blockCode = "missing_prereq"
-                                                    break
+                                                end
+                                            else
+                                                for pi = 1, #pids do
+                                                    local pid = pids[pi]
+                                                    if not (simCompleted[pid] or completedMap[pid] or (isCompFn and isCompFn(pid, true))) then
+                                                        blockCode = "missing_prereq"
+                                                        break
+                                                    end
                                                 end
                                             end
                                         end
@@ -1944,7 +1990,7 @@ ComputeRouteTabCache = function(playerHint)
                                 if stepPasses and not isSuppressed then
                                     local decInfo = decorateMap and decorateMap[idx]
                                     local outSt = st
-                                    if (baseCount < 50 or st.zoneId == zoneTarget) and decFn then
+                                    if hIsChain[loopPos] and (baseCount < 50 or st.zoneId == zoneTarget) and decFn then
                                         outSt = decFn(st, player, t)
                                     end
                                     baseCount = baseCount + 1
@@ -2249,6 +2295,8 @@ local function RefreshRouteTab(playerHint)
         toggleChecks.rogue:SetLabel((player.className or "Class") .. " BiS")
     end
     toggleChecks.auto:SetChecked(t.autoAdvance ~= false)
+    if toggleChecks.elite then toggleChecks.elite:SetChecked(t.skipEliteSolo ~= false) end
+    if wpChecks.skipEliteSolo then wpChecks.skipEliteSolo:SetChecked(t.skipEliteSolo ~= false) end
     if toggleChecks.skinning then toggleChecks.skinning:SetChecked(prof.hasSkinning == true) end
     if toggleChecks.lw then toggleChecks.lw:SetChecked(prof.hasLeatherworking == true) end
     if toggleChecks.prioritizeProf then toggleChecks.prioritizeProf:SetChecked(t.prioritizeSkinningLW ~= false) end
@@ -2447,6 +2495,12 @@ local function RefreshDiagTab()
     if wpChecks.allowRedQuests then
         wpChecks.allowRedQuests:SetChecked(maxOffset >= 5)
     end
+    if wpChecks.skipEliteSolo then
+        wpChecks.skipEliteSolo:SetChecked(toggles.skipEliteSolo ~= false)
+    end
+    if toggleChecks.elite then
+        toggleChecks.elite:SetChecked(toggles.skipEliteSolo ~= false)
+    end
 
     local gen = ns.State.GetRefreshGeneration and ns.State.GetRefreshGeneration() or 0
     local player = ns.State.GetPlayerInfo()
@@ -2456,7 +2510,7 @@ local function RefreshDiagTab()
     local locSig = ns.State.GetLocationPlanSignature and ns.State.GetLocationPlanSignature() or ""
     local qx = player.x and math.floor(player.x * 0.5) or -1
     local qy = player.y and math.floor(player.y * 0.5) or -1
-    local diagKey = string.format("%d:%d:%s:%s:%s:%d:%s:%s:%s:%d:%s:%s:%s:%s:%s:%d:%d",
+    local diagKey = string.format("%d:%d:%s:%s:%s:%d:%s:%s:%s:%d:%s:%s:%s:%s:%s:%s:%s:%d:%d",
         gen,
         player.level or 24,
         tostring(player.zoneId or 0),
@@ -2470,6 +2524,8 @@ local function RefreshDiagTab()
         tostring(player.classFile or "ROGUE"),
         tostring(toggles.autoDetectChar ~= false),
         tostring(toggles.locationReorder ~= false),
+        tostring(toggles.skipEliteSolo ~= false),
+        tostring(player.inGroup == true),
         readySig,
         locSig,
         qx,
@@ -2484,6 +2540,7 @@ local function RefreshDiagTab()
         integrations[#integrations + 1] = "Skin:" .. (player.hasSkinning and (player.skinningRank and tostring(player.skinningRank) or "|cff33ff99Yes|r") or "|cff888888No|r")
         integrations[#integrations + 1] = "LW:" .. (player.hasLeatherworking and (player.leatherworkingRank and tostring(player.leatherworkingRank) or "|cff33ff99Yes|r") or "|cff888888No|r")
         integrations[#integrations + 1] = "GPS:" .. ((toggles.locationReorder ~= false) and "|cff33ff99On|r" or "|cff888888Off|r")
+        integrations[#integrations + 1] = "Elite:" .. ((player.inGroup == true) and "|cff33ff99Group|r" or ((toggles.skipEliteSolo ~= false) and "|cffffd200SkipSolo|r" or "|cff888888All|r"))
         integrations[#integrations + 1] = "Guarded:" .. tostring(#blocked)
         if readyCount > 0 then
             integrations[#integrations + 1] = "Ready:" .. tostring(readyCount)
@@ -2766,12 +2823,14 @@ local function CreateWindowFrame()
         ns.State.Refresh("TOGGLE_prioritizeClassGear")
     end)
     toggleChecks.auto     = MakeCheckbox(balBox, "Auto-Advance", 112, ToggleOpt("autoAdvance"))
+    toggleChecks.elite    = MakeCheckbox(balBox, "Skip Elite (Solo)", 118, ToggleOpt("skipEliteSolo"))
 
     toggleChecks.dynamic:SetPoint("TOPLEFT", 10, -48)
     toggleChecks.dungeons:SetPoint("TOPLEFT", 144, -48)
     toggleChecks.bags:SetPoint("TOPLEFT", 280, -48)
     toggleChecks.rogue:SetPoint("TOPLEFT", 396, -48)
     toggleChecks.auto:SetPoint("TOPLEFT", 506, -48)
+    toggleChecks.elite:SetPoint("TOPLEFT", 620, -48)
 
     toggleChecks.skinning       = MakeCheckbox(balBox, "Have Skinning", 124, ToggleProfOpt("hasSkinning"))
     toggleChecks.lw             = MakeCheckbox(balBox, "Have Leatherworking", 152, ToggleProfOpt("hasLeatherworking"))
@@ -2926,28 +2985,28 @@ local function CreateWindowFrame()
     wpChecks.minimap:SetPoint("TOPLEFT", 250, -34)
     wpChecks.hud:SetPoint("TOPLEFT", 480, -34)
 
-    local clrWpBtn = MakeButton(setBox, "Clear Waypoints", 120, 22)
+    local clrWpBtn = MakeButton(setBox, "Clear Waypoints", 110, 22)
     clrWpBtn:SetPoint("BOTTOMLEFT", 10, 8)
     clrWpBtn:SetScript("OnClick", function()
         if ns.Waypoint and ns.Waypoint.Clear then ns.Waypoint.Clear() end
         ns.Print("Cleared active waypoints.")
     end)
 
-    local resyncBtn = MakeButton(setBox, "Resync Character & Flags", 160, 22)
-    resyncBtn:SetPoint("LEFT", clrWpBtn, "RIGHT", 8, 0)
+    local resyncBtn = MakeButton(setBox, "Resync Character & Flags", 146, 22)
+    resyncBtn:SetPoint("LEFT", clrWpBtn, "RIGHT", 6, 0)
     resyncBtn:SetScript("OnClick", function()
         ns.State.ResetProgress()
     end)
 
-    wpChecks.consultQuestie = MakeCheckbox(setBox, "QuestieDB Filter", 145, function(v)
+    wpChecks.consultQuestie = MakeCheckbox(setBox, "QuestieDB Filter", 126, function(v)
         if ns.charDB and ns.charDB.toggles then
             ns.charDB.toggles.consultQuestie = v
             ns.State.Refresh("GUARD_TOGGLED")
         end
     end)
-    wpChecks.consultQuestie:SetPoint("LEFT", resyncBtn, "RIGHT", 14, 0)
+    wpChecks.consultQuestie:SetPoint("LEFT", resyncBtn, "RIGHT", 8, 0)
 
-    wpChecks.allowRedQuests = MakeCheckbox(setBox, "Allow Red (+5) Quests", 175, function(v)
+    wpChecks.allowRedQuests = MakeCheckbox(setBox, "Allow Red (+5) Quests", 156, function(v)
         if ns.State and ns.State.SetMaxLevelOffset then
             if v then
                 local cur = (ns.State.GetMaxLevelOffset and ns.State.GetMaxLevelOffset()) or (ns.charDB and ns.charDB.maxLevelOffset) or 2
@@ -2965,7 +3024,15 @@ local function CreateWindowFrame()
             ns.State.Refresh("GUARD_TOGGLED")
         end
     end)
-    wpChecks.allowRedQuests:SetPoint("LEFT", wpChecks.consultQuestie, "RIGHT", 8, 0)
+    wpChecks.allowRedQuests:SetPoint("LEFT", wpChecks.consultQuestie, "RIGHT", 6, 0)
+
+    wpChecks.skipEliteSolo = MakeCheckbox(setBox, "Skip Elite (Solo)", 132, function(v)
+        if ns.charDB and ns.charDB.toggles then
+            ns.charDB.toggles.skipEliteSolo = v
+            ns.State.Refresh("TOGGLE_skipEliteSolo")
+        end
+    end)
+    wpChecks.skipEliteSolo:SetPoint("LEFT", wpChecks.allowRedQuests, "RIGHT", 6, 0)
 
     pDiag.infoText = pDiag:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     pDiag.infoText:SetPoint("TOPLEFT", setBox, "BOTTOMLEFT", 0, -10)
