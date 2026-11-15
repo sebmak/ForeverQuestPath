@@ -1,0 +1,35 @@
+name: Release ForeverQuestPath Addon
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install LuaJIT
+        run: sudo apt-get update && sudo apt-get install -y luajit
+
+      - name: Build and verify addon release archive
+        run: python3 scripts/package_release.py
+
+      - name: Publish GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/ForeverQuestPath-*.zip
+            dist/ForeverQuestPath-*.zip.sha256

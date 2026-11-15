@@ -1,0 +1,1318 @@
+{
+  "meta": {
+    "source": "WoW Forever 1.60.1: ForeverLevelingBiS + OpenMap Places + QuestieDB",
+    "build": "1.60.1",
+    "generatedAt": "2026-11-13T06:04:13Z",
+    "totalDungeons": 28
+  },
+  "dungeons": {
+    "hall-of-thanes": {
+      "dungeonId": "hall-of-thanes",
+      "zoneId": 16919,
+      "name": "The Hall of Thanes",
+      "zoneName": "The Hall of Thanes",
+      "entranceZoneId": 1537,
+      "entranceZoneName": "Ironforge",
+      "entranceCoords": {
+        "zoneId": 1537,
+        "x": 27.7,
+        "y": 47.9
+      },
+      "minLevel": 13,
+      "maxLevel": 18,
+      "recommendedLevel": 16,
+      "faction": "Alliance",
+      "questIds": [
+        96393,
+        96394,
+        96395,
+        96403
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Underground Map / Old Ironforge Incursion",
+          "questIds": [
+            96391,
+            96393
+          ],
+          "minLevel": 9,
+          "travelTip": "Golorn Stonehammer (Dun Morogh 77.0, 60.9) -> Magistrate Brassbeard (64.9, 58.5) -> Ironforge Old Ironforge gate (27.7, 47.9)"
+        }
+      ]
+    },
+    "ragefire-chasm": {
+      "dungeonId": "ragefire-chasm",
+      "zoneId": 2437,
+      "name": "Ragefire Chasm",
+      "zoneName": "Ragefire Chasm",
+      "entranceZoneId": 1637,
+      "entranceZoneName": "Orgrimmar",
+      "entranceCoords": {
+        "zoneId": 1637,
+        "x": 52.8,
+        "y": 49.0
+      },
+      "minLevel": 13,
+      "maxLevel": 18,
+      "recommendedLevel": 15,
+      "faction": "Horde",
+      "questIds": [
+        5722,
+        5723,
+        5724,
+        5725,
+        5728,
+        5730,
+        5761
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Hidden Enemies (Cleft of Shadow)",
+          "questIds": [
+            5726,
+            5727,
+            5728,
+            5729,
+            5730
+          ],
+          "minLevel": 9,
+          "travelTip": "Thrall (Grommash Hold 31.7, 37.8) -> Skull Rock / Neeru Fireblade (49.5, 50.6) -> Ragefire Chasm"
+        }
+      ]
+    },
+    "ruins-of-lordaeron": {
+      "dungeonId": "ruins-of-lordaeron",
+      "zoneId": 16611,
+      "name": "Ruins of Lordaeron",
+      "zoneName": "Ruins of Lordaeron",
+      "entranceZoneId": 1497,
+      "entranceZoneName": "Undercity",
+      "entranceCoords": {
+        "zoneId": 1497,
+        "x": 72.5,
+        "y": 11.4
+      },
+      "minLevel": 15,
+      "maxLevel": 20,
+      "recommendedLevel": 18,
+      "faction": "Both",
+      "questIds": [
+        92401,
+        92415,
+        92421,
+        92422,
+        95161,
+        95189,
+        95195,
+        95204,
+        95216,
+        95250,
+        97288,
+        97289,
+        97290,
+        97291,
+        97292
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Unending Torment (Horde)",
+          "questIds": [
+            97288,
+            97289,
+            97290,
+            97291,
+            97292
+          ],
+          "minLevel": 15,
+          "travelTip": "Undercity courtyard & War Quarter -> Ruins of Lordaeron entrance (72.5, 11.4)"
+        },
+        {
+          "chainName": "Remember That I Love You (Alliance)",
+          "questIds": [
+            92415,
+            95161
+          ],
+          "minLevel": 15,
+          "travelTip": "Throne Room ruins (72.5, 11.4) -> Stormwind Cathedral / Keep"
+        }
+      ]
+    },
+    "wailing-caverns": {
+      "dungeonId": "wailing-caverns",
+      "zoneId": 718,
+      "name": "Wailing Caverns",
+      "zoneName": "Wailing Caverns",
+      "entranceZoneId": 17,
+      "entranceZoneName": "The Barrens",
+      "entranceCoords": {
+        "zoneId": 17,
+        "x": 46.0,
+        "y": 35.8
+      },
+      "minLevel": 15,
+      "maxLevel": 25,
+      "recommendedLevel": 20,
+      "faction": "Both",
+      "questIds": [
+        914,
+        959,
+        962,
+        1486,
+        1487,
+        1489,
+        1490,
+        1491,
+        3366,
+        3369,
+        3370,
+        6981
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Leaders of the Fang (Horde)",
+          "questIds": [
+            880,
+            1489,
+            1490,
+            914
+          ],
+          "minLevel": 10,
+          "travelTip": "Tonga Runetotem (Crossroads 52.3, 31.9) -> Thunder Bluff Elder Rise -> Naralex"
+        }
+      ]
+    },
+    "the-deadmines": {
+      "dungeonId": "the-deadmines",
+      "zoneId": 1581,
+      "name": "The Deadmines",
+      "zoneName": "The Deadmines",
+      "entranceZoneId": 40,
+      "entranceZoneName": "Westfall",
+      "entranceCoords": {
+        "zoneId": 40,
+        "x": 42.5,
+        "y": 71.7
+      },
+      "minLevel": 18,
+      "maxLevel": 23,
+      "recommendedLevel": 20,
+      "faction": "Alliance",
+      "questIds": [
+        166,
+        167,
+        168,
+        214,
+        2040,
+        92753
+      ],
+      "unlockChains": [
+        {
+          "chainName": "The Defias Brotherhood",
+          "questIds": [
+            65,
+            132,
+            135,
+            141,
+            142,
+            155,
+            166
+          ],
+          "minLevel": 14,
+          "travelTip": "Sentinel Hill -> Redridge/Stormwind -> Moonbrook"
+        }
+      ]
+    },
+    "shadowfang-keep": {
+      "dungeonId": "shadowfang-keep",
+      "zoneId": 209,
+      "name": "Shadowfang Keep",
+      "zoneName": "Shadowfang Keep",
+      "entranceZoneId": 130,
+      "entranceZoneName": "Silverpine Forest",
+      "entranceCoords": {
+        "zoneId": 130,
+        "x": 44.8,
+        "y": 67.8
+      },
+      "minLevel": 22,
+      "maxLevel": 30,
+      "recommendedLevel": 25,
+      "faction": "Both",
+      "questIds": [
+        1013,
+        1014,
+        1098
+      ],
+      "unlockChains": []
+    },
+    "the-stockade": {
+      "dungeonId": "the-stockade",
+      "zoneId": 717,
+      "name": "The Stockade",
+      "zoneName": "The Stockade",
+      "entranceZoneId": 1519,
+      "entranceZoneName": "Stormwind City",
+      "entranceCoords": {
+        "zoneId": 1519,
+        "x": 49.3,
+        "y": 68.4
+      },
+      "minLevel": 22,
+      "maxLevel": 30,
+      "recommendedLevel": 26,
+      "faction": "Alliance",
+      "questIds": [
+        377,
+        378,
+        386,
+        387,
+        388,
+        391
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Defias Brotherhood / Bazil Thredd",
+          "questIds": [
+            166,
+            373,
+            389,
+            391,
+            392,
+            393,
+            350,
+            2745,
+            2746
+          ],
+          "minLevel": 22,
+          "travelTip": "Finish Deadmines -> Stormwind Keep -> Lakeside/Stockade"
+        },
+        {
+          "chainName": "The Fury Runs Deep (Lakeshire)",
+          "questIds": [
+            377,
+            378
+          ],
+          "minLevel": 22,
+          "travelTip": "Deputy Feldon/Magistrate Solomon in Redridge -> Stormwind"
+        }
+      ]
+    },
+    "excavation-site-wetlands": {
+      "dungeonId": "excavation-site-wetlands",
+      "zoneId": 16732,
+      "name": "Excavation Site: Wetlands",
+      "zoneName": "Excavation Site: Wetlands",
+      "entranceZoneId": 11,
+      "entranceZoneName": "Wetlands",
+      "entranceCoords": {
+        "zoneId": 11,
+        "x": 47.8,
+        "y": 56.2
+      },
+      "minLevel": 24,
+      "maxLevel": 29,
+      "recommendedLevel": 27,
+      "faction": "Both",
+      "questIds": [
+        95646,
+        95647,
+        95663,
+        95664,
+        95682,
+        95697,
+        95737,
+        95772,
+        95795,
+        95809,
+        95810,
+        98815,
+        98823,
+        98824
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Seeking Caitlin / Lost in the Thicket",
+          "questIds": [
+            95737,
+            95647,
+            95809
+          ],
+          "minLevel": 24,
+          "travelTip": "No key required. Llana (Ashenvale 35,48) -> Caitlin Grassman (Menethil 11.8,58.6)"
+        },
+        {
+          "chainName": "Songblade Search",
+          "questIds": [
+            95772,
+            95795
+          ],
+          "minLevel": 24,
+          "travelTip": "Dorin Songblade (Redridge 25.7,46.6) -> Daewyn inside Excavation Site"
+        },
+        {
+          "chainName": "Lost Relic Carry / Prehistoric Prism",
+          "questIds": [
+            95810,
+            98824
+          ],
+          "minLevel": 24,
+          "travelTip": "Interact with / loot relic inside Excavation Site -> Menethil/Greenwarden"
+        }
+      ]
+    },
+    "blackfathom-deeps": {
+      "dungeonId": "blackfathom-deeps",
+      "zoneId": 719,
+      "name": "Blackfathom Deeps",
+      "zoneName": "Blackfathom Deeps",
+      "entranceZoneId": 331,
+      "entranceZoneName": "Ashenvale",
+      "entranceCoords": {
+        "zoneId": 331,
+        "x": 14.6,
+        "y": 15.3
+      },
+      "minLevel": 24,
+      "maxLevel": 32,
+      "recommendedLevel": 27,
+      "faction": "Both",
+      "questIds": [
+        971,
+        1198,
+        1199,
+        1200,
+        1275,
+        6561,
+        6562,
+        6563,
+        6564,
+        6565,
+        6921,
+        6922,
+        78916,
+        78917
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Researching the Corruption -> Blackfathom Villainy",
+          "questIds": [
+            3765,
+            1275,
+            1199,
+            1200
+          ],
+          "minLevel": 20,
+          "travelTip": "Auberdine / Astranaar -> Darnassus -> Zoram Strand"
+        },
+        {
+          "chainName": "Trouble in the Deeps -> Allegiance to the Old Gods (Horde)",
+          "questIds": [
+            6562,
+            6564,
+            6565
+          ],
+          "minLevel": 17,
+          "travelTip": "Sun Rock Retreat / Zoram'gar Outpost -> Blackfathom Deeps"
+        }
+      ]
+    },
+    "city-of-dalaran": {
+      "dungeonId": "city-of-dalaran",
+      "zoneId": 16544,
+      "name": "City of Dalaran",
+      "zoneName": "City of Dalaran",
+      "entranceZoneId": 36,
+      "entranceZoneName": "Alterac Mountains",
+      "entranceCoords": {
+        "zoneId": 36,
+        "x": 8.5,
+        "y": 59.3
+      },
+      "minLevel": 28,
+      "maxLevel": 33,
+      "recommendedLevel": 31,
+      "faction": "Both",
+      "questIds": [
+        92456,
+        92457,
+        92458,
+        92489,
+        96984,
+        96986,
+        96987,
+        96988
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Dalaran Sewer Key (Alliance)",
+          "questIds": [
+            92432,
+            92458
+          ],
+          "minLevel": 24,
+          "travelTip": "Emissary Jacques (Southshore Town Hall 48.3,60.1) -> Image of Archmage Modera -> unlocks Dalaran Sewer Key"
+        }
+      ]
+    },
+    "scarlet-monastery": {
+      "dungeonId": "scarlet-monastery",
+      "zoneId": 796,
+      "name": "Scarlet Monastery",
+      "zoneName": "Scarlet Monastery",
+      "entranceZoneId": 85,
+      "entranceZoneName": "Tirisfal Glades",
+      "entranceCoords": {
+        "zoneId": 85,
+        "x": 85.0,
+        "y": 32.0
+      },
+      "minLevel": 28,
+      "maxLevel": 45,
+      "recommendedLevel": 36,
+      "faction": "Both",
+      "questIds": [
+        1048,
+        1049,
+        1050,
+        1051,
+        1053,
+        1113,
+        1160,
+        96800
+      ],
+      "unlockChains": [
+        {
+          "chainName": "The Scarlet Key & In the Name of the Light",
+          "questIds": [
+            1050,
+            1052,
+            1053
+          ],
+          "minLevel": 33,
+          "travelTip": "Loot The Scarlet Key from Doan's Strongbox (Library) for Armory/Cathedral; Southshore Raleigh Chain"
+        }
+      ]
+    },
+    "gnomeregan": {
+      "dungeonId": "gnomeregan",
+      "zoneId": 721,
+      "name": "Gnomeregan",
+      "zoneName": "Gnomeregan",
+      "entranceZoneId": 1,
+      "entranceZoneName": "Dun Morogh",
+      "entranceCoords": {
+        "zoneId": 1,
+        "x": 24.5,
+        "y": 39.8
+      },
+      "minLevel": 29,
+      "maxLevel": 38,
+      "recommendedLevel": 32,
+      "faction": "Both",
+      "questIds": [
+        2841,
+        2842,
+        2843,
+        2904,
+        2922,
+        2923,
+        2924,
+        2925,
+        2926,
+        2927,
+        2928,
+        2929,
+        2930,
+        2931,
+        2945,
+        2947,
+        2949,
+        2951,
+        2952,
+        2953,
+        2962,
+        4601,
+        4602,
+        4603,
+        4604,
+        4605,
+        4606,
+        80325
+      ],
+      "unlockChains": [
+        {
+          "chainName": "The Grand Betrayal & Workshop Key",
+          "questIds": [
+            2923,
+            2924,
+            2928,
+            2929
+          ],
+          "minLevel": 24,
+          "travelTip": "Tinkmaster Overspark (Ironforge); Workshop Key drops from Electrocutioner 6000 for backdoor"
+        }
+      ]
+    },
+    "razorfen-kraul": {
+      "dungeonId": "razorfen-kraul",
+      "zoneId": 491,
+      "name": "Razorfen Kraul",
+      "zoneName": "Razorfen Kraul",
+      "entranceZoneId": 17,
+      "entranceZoneName": "The Barrens",
+      "entranceCoords": {
+        "zoneId": 17,
+        "x": 42.3,
+        "y": 90.2
+      },
+      "minLevel": 30,
+      "maxLevel": 40,
+      "recommendedLevel": 33,
+      "faction": "Both",
+      "questIds": [
+        1101,
+        1102,
+        1109,
+        1142,
+        1144,
+        1221
+      ],
+      "unlockChains": []
+    },
+    "the-drowned-city": {
+      "dungeonId": "the-drowned-city",
+      "zoneId": 16550,
+      "name": "The Drowned City",
+      "zoneName": "The Drowned City",
+      "entranceZoneId": 33,
+      "entranceZoneName": "Stranglethorn Vale",
+      "entranceCoords": {
+        "zoneId": 33,
+        "x": 21.3,
+        "y": 27.8
+      },
+      "minLevel": 30,
+      "maxLevel": 40,
+      "recommendedLevel": 37,
+      "faction": "Both",
+      "questIds": [
+        95775,
+        95776,
+        95787,
+        95788,
+        95789,
+        95791,
+        96774,
+        97130
+      ],
+      "unlockChains": [
+        {
+          "chainName": "The Drowned City Underwater Portal",
+          "questIds": [
+            95787,
+            95788,
+            95789,
+            95791,
+            97130
+          ],
+          "minLevel": 30,
+          "travelTip": "No key required. Rebel Camp / Booty Bay -> underwater ruins west of Vile Reef (21.3, 27.8)"
+        }
+      ]
+    },
+    "krol-dok-stronghold": {
+      "dungeonId": "krol-dok-stronghold",
+      "zoneId": 16842,
+      "name": "Krol'dok Stronghold",
+      "zoneName": "Krol'dok Stronghold",
+      "entranceZoneId": 16591,
+      "entranceZoneName": "Riverglades",
+      "entranceCoords": {
+        "zoneId": 16591,
+        "x": 39.5,
+        "y": 39.1
+      },
+      "minLevel": 37,
+      "maxLevel": 45,
+      "recommendedLevel": 42,
+      "faction": "Both",
+      "questIds": [
+        94968,
+        94972,
+        94973,
+        94974,
+        94975,
+        94980,
+        94981,
+        94982,
+        94983,
+        94984,
+        94997,
+        94998,
+        96771
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Krol'dok Compound Key (Alliance)",
+          "questIds": [
+            94980,
+            94981
+          ],
+          "minLevel": 38,
+          "travelTip": "Loot mould inside Krol'dok Stronghold -> Farholde Keep (Riverglades) for Krol'dok Compound Key (item 267089)"
+        },
+        {
+          "chainName": "Twilight Mementos Chain",
+          "questIds": [
+            94983,
+            94997,
+            94998
+          ],
+          "minLevel": 38,
+          "travelTip": "Farholde Keep <-> northern Riverglades"
+        }
+      ]
+    },
+    "razorfen-downs": {
+      "dungeonId": "razorfen-downs",
+      "zoneId": 722,
+      "name": "Razorfen Downs",
+      "zoneName": "Razorfen Downs",
+      "entranceZoneId": 17,
+      "entranceZoneName": "The Barrens",
+      "entranceCoords": {
+        "zoneId": 17,
+        "x": 49.3,
+        "y": 93.8
+      },
+      "minLevel": 40,
+      "maxLevel": 50,
+      "recommendedLevel": 44,
+      "faction": "Both",
+      "questIds": [
+        3341,
+        3523,
+        3525,
+        3636,
+        6521,
+        6522,
+        6626,
+        93604,
+        96773,
+        97196
+      ],
+      "unlockChains": []
+    },
+    "uldaman": {
+      "dungeonId": "uldaman",
+      "zoneId": 1337,
+      "name": "Uldaman",
+      "zoneName": "Uldaman",
+      "entranceZoneId": 3,
+      "entranceZoneName": "Badlands",
+      "entranceCoords": {
+        "zoneId": 3,
+        "x": 43.5,
+        "y": 13.7
+      },
+      "minLevel": 42,
+      "maxLevel": 52,
+      "recommendedLevel": 45,
+      "faction": "Both",
+      "questIds": [
+        17,
+        704,
+        709,
+        721,
+        722,
+        1139,
+        1360,
+        2198,
+        2199,
+        2200,
+        2201,
+        2202,
+        2204,
+        2240,
+        2278,
+        2279,
+        2280,
+        2283,
+        2284,
+        2318,
+        2338,
+        2339,
+        2340,
+        2341,
+        2342,
+        2361,
+        2398,
+        2418,
+        2439,
+        3375
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Agmond's Fate / Solution to Doom",
+          "questIds": [
+            704,
+            709,
+            722,
+            2240,
+            2398
+          ],
+          "minLevel": 35,
+          "travelTip": "Loch Modan -> Badlands north entrance"
+        },
+        {
+          "chainName": "The Shattered Necklace / Platinum Discs",
+          "questIds": [
+            2198,
+            2199,
+            2200,
+            2201,
+            2204,
+            2278,
+            2279,
+            2439
+          ],
+          "minLevel": 37,
+          "travelTip": "Inside Uldaman -> Ironforge Hall of Explorers"
+        }
+      ]
+    },
+    "zul-farrak": {
+      "dungeonId": "zul-farrak",
+      "zoneId": 1176,
+      "name": "Zul'Farrak",
+      "zoneName": "Zul'Farrak",
+      "entranceZoneId": 440,
+      "entranceZoneName": "Tanaris",
+      "entranceCoords": {
+        "zoneId": 440,
+        "x": 38.7,
+        "y": 20.1
+      },
+      "minLevel": 44,
+      "maxLevel": 54,
+      "recommendedLevel": 47,
+      "faction": "Both",
+      "questIds": [
+        2768,
+        2770,
+        2846,
+        2861,
+        2864,
+        2865,
+        2936,
+        2991,
+        3042,
+        3527,
+        96770,
+        96775
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Mallet of Zul'Farrak (Gahz'rilla)",
+          "questIds": [
+            3527,
+            2770
+          ],
+          "minLevel": 40,
+          "travelTip": "Sacrifice at Jintha'alor altar (Hinterlands) -> Shimmering Flats -> Zul'Farrak"
+        }
+      ]
+    },
+    "maraudon": {
+      "dungeonId": "maraudon",
+      "zoneId": 2100,
+      "name": "Maraudon",
+      "zoneName": "Maraudon",
+      "entranceZoneId": 405,
+      "entranceZoneName": "Desolace",
+      "entranceCoords": {
+        "zoneId": 405,
+        "x": 29.2,
+        "y": 62.6
+      },
+      "minLevel": 46,
+      "maxLevel": 55,
+      "recommendedLevel": 49,
+      "faction": "Both",
+      "questIds": [
+        7028,
+        7029,
+        7041,
+        7044,
+        7046,
+        7064,
+        7065,
+        7066,
+        7067,
+        7068,
+        7070,
+        93404,
+        96776
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Scepter of Celebras",
+          "questIds": [
+            7067,
+            7044,
+            7046
+          ],
+          "minLevel": 41,
+          "travelTip": "Orange/Purple Maraudon wings -> craft Scepter with Celebras the Redeemed"
+        }
+      ]
+    },
+    "alcaz-prison": {
+      "dungeonId": "alcaz-prison",
+      "zoneId": 2079,
+      "name": "Alcaz Prison",
+      "zoneName": "Alcaz Prison",
+      "entranceZoneId": 15,
+      "entranceZoneName": "Dustwallow Marsh",
+      "entranceCoords": {
+        "zoneId": 15,
+        "x": 75.3,
+        "y": 14.1
+      },
+      "minLevel": 48,
+      "maxLevel": 53,
+      "recommendedLevel": 50,
+      "faction": "Both",
+      "questIds": [
+        8970,
+        95262,
+        95263,
+        95309,
+        95454,
+        95483,
+        96332,
+        96334,
+        96335,
+        96337,
+        96369,
+        96376,
+        96377,
+        96379,
+        96381,
+        96772
+      ],
+      "unlockChains": []
+    },
+    "the-temple-of-atal-hakkar": {
+      "dungeonId": "the-temple-of-atal-hakkar",
+      "zoneId": 1477,
+      "name": "The Temple of Atal'Hakkar",
+      "zoneName": "The Temple of Atal'Hakkar",
+      "entranceZoneId": 8,
+      "entranceZoneName": "Swamp of Sorrows",
+      "entranceCoords": {
+        "zoneId": 8,
+        "x": 70.0,
+        "y": 53.7
+      },
+      "minLevel": 50,
+      "maxLevel": 60,
+      "recommendedLevel": 53,
+      "faction": "Both",
+      "questIds": [
+        1445,
+        1446,
+        1475,
+        3373,
+        3380,
+        3446,
+        3447,
+        3528,
+        8733
+      ],
+      "unlockChains": []
+    },
+    "blackrock-depths": {
+      "dungeonId": "blackrock-depths",
+      "zoneId": 1584,
+      "name": "Blackrock Depths",
+      "zoneName": "Blackrock Depths",
+      "entranceZoneId": 51,
+      "entranceZoneName": "Searing Gorge",
+      "entranceCoords": {
+        "zoneId": 51,
+        "x": 34.8,
+        "y": 85.3
+      },
+      "minLevel": 52,
+      "maxLevel": 60,
+      "recommendedLevel": 55,
+      "faction": "Both",
+      "questIds": [
+        3801,
+        3802,
+        3907,
+        3911,
+        3981,
+        3982,
+        4001,
+        4002,
+        4003,
+        4004,
+        4024,
+        4063,
+        4081,
+        4082,
+        4083,
+        4121,
+        4122,
+        4123,
+        4126,
+        4128,
+        4132,
+        4133,
+        4134,
+        4136,
+        4201,
+        4241,
+        4242,
+        4263,
+        4264,
+        4282,
+        4286,
+        4295,
+        4322,
+        4324,
+        4341,
+        4342,
+        4361,
+        4362,
+        4363,
+        7201,
+        7604,
+        9015,
+        97197
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Shadowforge Key (Dark Iron Legacy)",
+          "questIds": [
+            3801,
+            3802
+          ],
+          "minLevel": 48,
+          "travelTip": "Die near BRD anvil -> speak to Franclorn Forgewright outside Blackrock chamber"
+        },
+        {
+          "chainName": "Onyxia Alliance Attunement (Windsor)",
+          "questIds": [
+            4182,
+            4183,
+            4184,
+            4185,
+            4186,
+            4223,
+            4224,
+            4241,
+            4242,
+            4264,
+            4282,
+            4322,
+            6402,
+            6403,
+            6501,
+            6502
+          ],
+          "minLevel": 50,
+          "travelTip": "Morgan's Vigil (Burning Steppes) -> BRD Marshal Windsor -> Stormwind Keep -> UBRS"
+        }
+      ]
+    },
+    "blackmaw-hold": {
+      "dungeonId": "blackmaw-hold",
+      "zoneId": 1216,
+      "name": "Blackmaw Hold",
+      "zoneName": "Blackmaw Hold",
+      "entranceZoneId": 16,
+      "entranceZoneName": "Azshara",
+      "entranceCoords": {
+        "zoneId": 16,
+        "x": 38.4,
+        "y": 32.6
+      },
+      "minLevel": 55,
+      "maxLevel": 60,
+      "recommendedLevel": 58,
+      "faction": "Both",
+      "questIds": [
+        92066,
+        92069,
+        92343,
+        92344,
+        97173,
+        97198,
+        97327
+      ],
+      "unlockChains": []
+    },
+    "blackrock-spire": {
+      "dungeonId": "blackrock-spire",
+      "zoneId": 1583,
+      "name": "Blackrock Spire",
+      "zoneName": "Blackrock Spire",
+      "entranceZoneId": 46,
+      "entranceZoneName": "Burning Steppes",
+      "entranceCoords": {
+        "zoneId": 46,
+        "x": 29.0,
+        "y": 38.0
+      },
+      "minLevel": 55,
+      "maxLevel": 60,
+      "recommendedLevel": 58,
+      "faction": "Both",
+      "questIds": [
+        4701,
+        4724,
+        4729,
+        4734,
+        4735,
+        4742,
+        4743,
+        4764,
+        4765,
+        4766,
+        4768,
+        4769,
+        4788,
+        4862,
+        4866,
+        4867,
+        4903,
+        4907,
+        4974,
+        4981,
+        4982,
+        4983,
+        5001,
+        5002,
+        5047,
+        5081,
+        5089,
+        5102,
+        5127,
+        5160,
+        6502,
+        6569,
+        6602,
+        7761,
+        8966,
+        8989,
+        8995,
+        98325
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Seal of Ascension (UBRS Key)",
+          "questIds": [
+            4742,
+            4743
+          ],
+          "minLevel": 57,
+          "travelTip": "LBRS bosses drop 3 gems -> Dustwallow Emberstrife -> UBRS"
+        }
+      ]
+    },
+    "dire-maul": {
+      "dungeonId": "dire-maul",
+      "zoneId": 2557,
+      "name": "Dire Maul",
+      "zoneName": "Dire Maul",
+      "entranceZoneId": 357,
+      "entranceZoneName": "Feralas",
+      "entranceCoords": {
+        "zoneId": 357,
+        "x": 59.0,
+        "y": 41.8
+      },
+      "minLevel": 58,
+      "maxLevel": 60,
+      "recommendedLevel": 59,
+      "faction": "Both",
+      "questIds": [
+        1193,
+        1318,
+        5518,
+        5519,
+        5525,
+        5528,
+        7429,
+        7441,
+        7461,
+        7462,
+        7463,
+        7481,
+        7482,
+        7483,
+        7484,
+        7485,
+        7488,
+        7489,
+        7492,
+        7494,
+        7498,
+        7499,
+        7500,
+        7501,
+        7502,
+        7503,
+        7504,
+        7505,
+        7506,
+        7507,
+        7508,
+        7509,
+        7703,
+        7877,
+        8948,
+        8949,
+        8950,
+        8967,
+        8990
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Crescent Key",
+          "questIds": [
+            7441
+          ],
+          "minLevel": 56,
+          "travelTip": "Kill Pusillin in Dire Maul East for Crescent Key to West/North"
+        }
+      ]
+    },
+    "scholomance": {
+      "dungeonId": "scholomance",
+      "zoneId": 2057,
+      "name": "Scholomance",
+      "zoneName": "Scholomance",
+      "entranceZoneId": 28,
+      "entranceZoneName": "Western Plaguelands",
+      "entranceCoords": {
+        "zoneId": 28,
+        "x": 69.6,
+        "y": 73.1
+      },
+      "minLevel": 58,
+      "maxLevel": 60,
+      "recommendedLevel": 59,
+      "faction": "Both",
+      "questIds": [
+        105,
+        211,
+        4771,
+        5341,
+        5343,
+        5382,
+        5384,
+        5466,
+        5515,
+        5529,
+        5531,
+        5582,
+        8969,
+        8992
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Skeleton Key (Alliance)",
+          "questIds": [
+            5533,
+            5537,
+            5538,
+            5801,
+            5803,
+            5505
+          ],
+          "minLevel": 55,
+          "travelTip": "Chillwind Camp Commander Ashlam -> WPL/Tanaris/Un'Goro -> Skeleton Key"
+        }
+      ]
+    },
+    "stratholme": {
+      "dungeonId": "stratholme",
+      "zoneId": 2017,
+      "name": "Stratholme",
+      "zoneName": "Stratholme",
+      "entranceZoneId": 139,
+      "entranceZoneName": "Eastern Plaguelands",
+      "entranceCoords": {
+        "zoneId": 139,
+        "x": 26.6,
+        "y": 8.9
+      },
+      "minLevel": 58,
+      "maxLevel": 60,
+      "recommendedLevel": 59,
+      "faction": "Both",
+      "questIds": [
+        5122,
+        5125,
+        5212,
+        5213,
+        5214,
+        5243,
+        5251,
+        5262,
+        5263,
+        5282,
+        5463,
+        5848,
+        6163,
+        8945,
+        8968,
+        8991
+      ],
+      "unlockChains": [
+        {
+          "chainName": "Key to the City",
+          "questIds": [
+            5122,
+            5212,
+            5213,
+            5214,
+            5282
+          ],
+          "minLevel": 55,
+          "travelTip": "Kill Magistrate Barthilas inside Service Entrance -> drops Key to the City"
+        }
+      ]
+    },
+    "the-shapers-terrace": {
+      "dungeonId": "the-shapers-terrace",
+      "zoneId": 16985,
+      "name": "The Shaper's Terrace",
+      "zoneName": "The Shaper's Terrace",
+      "entranceZoneId": 490,
+      "entranceZoneName": "Un'Goro Crater",
+      "entranceCoords": {
+        "zoneId": 490,
+        "x": 50.0,
+        "y": 12.0
+      },
+      "minLevel": 58,
+      "maxLevel": 60,
+      "recommendedLevel": 59,
+      "faction": "Both",
+      "questIds": [
+        95790,
+        95924,
+        95925,
+        95926,
+        95928,
+        97049
+      ],
+      "unlockChains": []
+    }
+  }
+}

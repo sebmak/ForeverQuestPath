@@ -1,0 +1,15 @@
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# macOS metadata
+.DS_Store
+._*
+__MACOSX/
+
+# Upstream QuestieDB release (fetched via `python3 scraper/sync_questiedb.py`)
+scraper/vendor/
+
+# Built release archives (published to GitHub Releases)
+dist/

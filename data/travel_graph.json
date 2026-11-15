@@ -1,0 +1,5285 @@
+{
+  "meta": {
+    "source": "WoW Forever 1.60.1: OpenMap FlightData/Places (30 yds/s) + Classic/Forever XP Curve",
+    "build": "1.60.1",
+    "generatedAt": "2026-11-13T06:04:13Z",
+    "totalNodes": 50,
+    "totalEdges": 407,
+    "totalRaces": 10,
+    "totalClasses": 9
+  },
+  "xpCurve": {
+    "1": 400,
+    "2": 900,
+    "3": 1400,
+    "4": 2100,
+    "5": 2800,
+    "6": 3600,
+    "7": 4500,
+    "8": 5400,
+    "9": 6500,
+    "10": 7600,
+    "11": 8800,
+    "12": 10100,
+    "13": 11400,
+    "14": 12900,
+    "15": 14400,
+    "16": 16000,
+    "17": 17700,
+    "18": 19400,
+    "19": 21300,
+    "20": 23200,
+    "21": 25200,
+    "22": 27300,
+    "23": 29400,
+    "24": 31700,
+    "25": 34000,
+    "26": 36400,
+    "27": 38900,
+    "28": 41400,
+    "29": 44300,
+    "30": 47400,
+    "31": 50800,
+    "32": 54500,
+    "33": 58600,
+    "34": 62800,
+    "35": 67100,
+    "36": 71600,
+    "37": 76100,
+    "38": 80800,
+    "39": 85700,
+    "40": 90700,
+    "41": 95800,
+    "42": 101000,
+    "43": 106300,
+    "44": 111800,
+    "45": 117500,
+    "46": 123200,
+    "47": 129100,
+    "48": 135100,
+    "49": 141200,
+    "50": 147500,
+    "51": 153900,
+    "52": 160400,
+    "53": 167100,
+    "54": 173900,
+    "55": 180800,
+    "56": 187900,
+    "57": 195000,
+    "58": 202300,
+    "59": 209800
+  },
+  "races": [
+    {
+      "id": 1,
+      "name": "Human",
+      "label": "Human",
+      "raceBit": 1,
+      "faction": "Alliance",
+      "startZoneId": 12,
+      "startCoords": {
+        "zoneId": 12,
+        "x": 48.17,
+        "y": 42.94
+      },
+      "classes": [
+        "WARRIOR",
+        "PALADIN",
+        "HUNTER",
+        "ROGUE",
+        "PRIEST",
+        "MAGE",
+        "WARLOCK"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Orc",
+      "label": "Orc",
+      "raceBit": 2,
+      "faction": "Horde",
+      "startZoneId": 14,
+      "startCoords": {
+        "zoneId": 14,
+        "x": 43.29,
+        "y": 68.53
+      },
+      "classes": [
+        "WARRIOR",
+        "HUNTER",
+        "ROGUE",
+        "SHAMAN",
+        "MAGE",
+        "WARLOCK"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Dwarf",
+      "label": "Dwarf",
+      "raceBit": 4,
+      "faction": "Alliance",
+      "startZoneId": 1,
+      "startCoords": {
+        "zoneId": 1,
+        "x": 29.93,
+        "y": 71.2
+      },
+      "classes": [
+        "WARRIOR",
+        "PALADIN",
+        "HUNTER",
+        "ROGUE",
+        "PRIEST",
+        "SHAMAN"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "NightElf",
+      "label": "Night Elf",
+      "raceBit": 8,
+      "faction": "Alliance",
+      "startZoneId": 141,
+      "startCoords": {
+        "zoneId": 141,
+        "x": 58.69,
+        "y": 44.27
+      },
+      "classes": [
+        "WARRIOR",
+        "HUNTER",
+        "ROGUE",
+        "PRIEST",
+        "DRUID"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Scourge",
+      "label": "Undead",
+      "raceBit": 16,
+      "faction": "Horde",
+      "startZoneId": 85,
+      "startCoords": {
+        "zoneId": 85,
+        "x": 30.22,
+        "y": 71.65
+      },
+      "classes": [
+        "WARRIOR",
+        "PALADIN",
+        "ROGUE",
+        "PRIEST",
+        "MAGE",
+        "WARLOCK"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Tauren",
+      "label": "Tauren",
+      "raceBit": 32,
+      "faction": "Horde",
+      "startZoneId": 215,
+      "startCoords": {
+        "zoneId": 215,
+        "x": 44.47,
+        "y": 77.5
+      },
+      "classes": [
+        "WARRIOR",
+        "HUNTER",
+        "SHAMAN",
+        "DRUID"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Gnome",
+      "label": "Gnome",
+      "raceBit": 64,
+      "faction": "Alliance",
+      "startZoneId": 1,
+      "startCoords": {
+        "zoneId": 1,
+        "x": 29.93,
+        "y": 71.2
+      },
+      "classes": [
+        "WARRIOR",
+        "ROGUE",
+        "PRIEST",
+        "MAGE",
+        "WARLOCK"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Troll",
+      "label": "Troll",
+      "raceBit": 128,
+      "faction": "Horde",
+      "startZoneId": 14,
+      "startCoords": {
+        "zoneId": 14,
+        "x": 43.29,
+        "y": 68.53
+      },
+      "classes": [
+        "WARRIOR",
+        "HUNTER",
+        "ROGUE",
+        "PRIEST",
+        "SHAMAN",
+        "MAGE",
+        "WARLOCK"
+      ]
+    },
+    {
+      "id": 95,
+      "name": "HighOrderSkyborne",
+      "label": "High Order Skyborne",
+      "raceBit": 4294967296,
+      "faction": "Alliance",
+      "startZoneId": 16593,
+      "startCoords": {
+        "zoneId": 16593,
+        "x": 42.82,
+        "y": 23.39
+      },
+      "classes": [
+        "WARRIOR",
+        "HUNTER",
+        "ROGUE",
+        "MAGE",
+        "DRUID"
+      ]
+    },
+    {
+      "id": 96,
+      "name": "WindshaperSkyborne",
+      "label": "Windshaper Skyborne",
+      "raceBit": 8589934592,
+      "faction": "Horde",
+      "startZoneId": 16593,
+      "startCoords": {
+        "zoneId": 16593,
+        "x": 42.82,
+        "y": 23.39
+      },
+      "classes": [
+        "WARRIOR",
+        "HUNTER",
+        "ROGUE",
+        "SHAMAN",
+        "DRUID"
+      ]
+    }
+  ],
+  "classes": [
+    {
+      "id": 1,
+      "key": "WARRIOR",
+      "label": "Warrior",
+      "classBit": 1,
+      "races": [
+        "Human",
+        "Orc",
+        "Dwarf",
+        "NightElf",
+        "Scourge",
+        "Tauren",
+        "Gnome",
+        "Troll",
+        "HighOrderSkyborne",
+        "WindshaperSkyborne"
+      ]
+    },
+    {
+      "id": 2,
+      "key": "PALADIN",
+      "label": "Paladin",
+      "classBit": 2,
+      "races": [
+        "Human",
+        "Dwarf",
+        "Scourge"
+      ]
+    },
+    {
+      "id": 3,
+      "key": "HUNTER",
+      "label": "Hunter",
+      "classBit": 4,
+      "races": [
+        "Human",
+        "Orc",
+        "Dwarf",
+        "NightElf",
+        "Tauren",
+        "Troll",
+        "HighOrderSkyborne",
+        "WindshaperSkyborne"
+      ]
+    },
+    {
+      "id": 4,
+      "key": "ROGUE",
+      "label": "Rogue",
+      "classBit": 8,
+      "races": [
+        "Human",
+        "Orc",
+        "Dwarf",
+        "NightElf",
+        "Scourge",
+        "Gnome",
+        "Troll",
+        "HighOrderSkyborne",
+        "WindshaperSkyborne"
+      ]
+    },
+    {
+      "id": 5,
+      "key": "PRIEST",
+      "label": "Priest",
+      "classBit": 16,
+      "races": [
+        "Human",
+        "Dwarf",
+        "NightElf",
+        "Scourge",
+        "Gnome",
+        "Troll"
+      ]
+    },
+    {
+      "id": 7,
+      "key": "SHAMAN",
+      "label": "Shaman",
+      "classBit": 64,
+      "races": [
+        "Orc",
+        "Dwarf",
+        "Tauren",
+        "Troll",
+        "WindshaperSkyborne"
+      ]
+    },
+    {
+      "id": 8,
+      "key": "MAGE",
+      "label": "Mage",
+      "classBit": 128,
+      "races": [
+        "Human",
+        "Orc",
+        "Scourge",
+        "Gnome",
+        "Troll",
+        "HighOrderSkyborne"
+      ]
+    },
+    {
+      "id": 9,
+      "key": "WARLOCK",
+      "label": "Warlock",
+      "classBit": 256,
+      "races": [
+        "Human",
+        "Orc",
+        "Scourge",
+        "Gnome",
+        "Troll"
+      ]
+    },
+    {
+      "id": 11,
+      "key": "DRUID",
+      "label": "Druid",
+      "classBit": 1024,
+      "races": [
+        "NightElf",
+        "Tauren",
+        "HighOrderSkyborne",
+        "WindshaperSkyborne"
+      ]
+    }
+  ],
+  "nodes": {
+    "14": {
+      "zoneId": 14,
+      "uiMapId": 1411,
+      "name": "Durotar",
+      "faction": "Horde",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 1,
+      "maxLevel": 10,
+      "hubName": "Razor Hill",
+      "hubCoords": {
+        "zoneId": 14,
+        "x": 52.0,
+        "y": 42.0
+      },
+      "flightNodeId": null,
+      "flightNodeIds": [],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "12": {
+      "zoneId": 12,
+      "uiMapId": 1429,
+      "name": "Elwynn Forest",
+      "faction": "Alliance",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 1,
+      "maxLevel": 10,
+      "hubName": "Goldshire Inn",
+      "hubCoords": {
+        "zoneId": 12,
+        "x": 43.8,
+        "y": 65.8
+      },
+      "flightNodeId": null,
+      "flightNodeIds": [],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "215": {
+      "zoneId": 215,
+      "uiMapId": 1412,
+      "name": "Mulgore",
+      "faction": "Horde",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 1,
+      "maxLevel": 10,
+      "hubName": "Bloodhoof Village",
+      "hubCoords": {
+        "zoneId": 215,
+        "x": 47.0,
+        "y": 60.0
+      },
+      "flightNodeId": null,
+      "flightNodeIds": [],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": true
+    },
+    "141": {
+      "zoneId": 141,
+      "uiMapId": 1438,
+      "name": "Teldrassil",
+      "faction": "Alliance",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 1,
+      "maxLevel": 11,
+      "hubName": "Vesprystus (Teldrassil)",
+      "hubCoords": {
+        "zoneId": 141,
+        "x": 58.4,
+        "y": 94.02
+      },
+      "flightNodeId": 27,
+      "flightNodeIds": [
+        27
+      ],
+      "hasBoat": true,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "1": {
+      "zoneId": 1,
+      "uiMapId": 1426,
+      "name": "Dun Morogh",
+      "faction": "Alliance",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 1,
+      "maxLevel": 12,
+      "hubName": "Kharanos Inn",
+      "hubCoords": {
+        "zoneId": 1,
+        "x": 47.4,
+        "y": 52.5
+      },
+      "flightNodeId": null,
+      "flightNodeIds": [],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "85": {
+      "zoneId": 85,
+      "uiMapId": 1420,
+      "name": "Tirisfal Glades",
+      "faction": "Horde",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 1,
+      "maxLevel": 12,
+      "hubName": "Brill / Tirisfal Approach",
+      "hubCoords": {
+        "zoneId": 85,
+        "x": 61.0,
+        "y": 52.0
+      },
+      "flightNodeId": null,
+      "flightNodeIds": [],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": true,
+      "hasAirship": false
+    },
+    "16593": {
+      "zoneId": 16593,
+      "uiMapId": 2521,
+      "name": "Zephras Isle",
+      "faction": "Contested",
+      "continent": "Zephras Isle",
+      "region": -1,
+      "minLevel": 1,
+      "maxLevel": 12,
+      "hubName": "Calmbreeze Haven Inn, Zephras Isle",
+      "hubCoords": {
+        "zoneId": 16593,
+        "x": 43.0,
+        "y": 43.2
+      },
+      "flightNodeId": null,
+      "flightNodeIds": [],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": true
+    },
+    "400": {
+      "zoneId": 400,
+      "uiMapId": 1441,
+      "name": "Thousand Needles",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 6,
+      "maxLevel": 35,
+      "hubName": "Mirage Raceway",
+      "hubCoords": {
+        "zoneId": 400,
+        "x": 77.8,
+        "y": 77.3
+      },
+      "flightNodeId": 30,
+      "flightNodeIds": [
+        30
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "40": {
+      "zoneId": 40,
+      "uiMapId": 1436,
+      "name": "Westfall",
+      "faction": "Alliance",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 9,
+      "maxLevel": 18,
+      "hubName": "Thor (Westfall)",
+      "hubCoords": {
+        "zoneId": 40,
+        "x": 56.55,
+        "y": 52.64
+      },
+      "flightNodeId": 4,
+      "flightNodeIds": [
+        4
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "38": {
+      "zoneId": 38,
+      "uiMapId": 1432,
+      "name": "Loch Modan",
+      "faction": "Alliance",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 10,
+      "maxLevel": 18,
+      "hubName": "Thorgrum Borrelson (Loch Modan)",
+      "hubCoords": {
+        "zoneId": 38,
+        "x": 33.94,
+        "y": 50.95
+      },
+      "flightNodeId": 8,
+      "flightNodeIds": [
+        8
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "130": {
+      "zoneId": 130,
+      "uiMapId": 1421,
+      "name": "Silverpine Forest",
+      "faction": "Horde",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 10,
+      "maxLevel": 20,
+      "hubName": "Pyrewood / Dead Drop Approach",
+      "hubCoords": {
+        "zoneId": 130,
+        "x": 47.1,
+        "y": 71.0
+      },
+      "flightNodeId": 10,
+      "flightNodeIds": [
+        10
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "10": {
+      "zoneId": 10,
+      "uiMapId": 1431,
+      "name": "Duskwood",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 10,
+      "maxLevel": 30,
+      "hubName": "Felicia Maline (Duskwood)",
+      "hubCoords": {
+        "zoneId": 10,
+        "x": 77.49,
+        "y": 44.29
+      },
+      "flightNodeId": 12,
+      "flightNodeIds": [
+        12
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "17": {
+      "zoneId": 17,
+      "uiMapId": 1413,
+      "name": "The Barrens",
+      "faction": "Horde",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 10,
+      "maxLevel": 33,
+      "hubName": "Bragok (The Barrens)",
+      "hubCoords": {
+        "zoneId": 17,
+        "x": 63.08,
+        "y": 37.16
+      },
+      "flightNodeId": 80,
+      "flightNodeIds": [
+        25,
+        77,
+        80
+      ],
+      "hasBoat": true,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "148": {
+      "zoneId": 148,
+      "uiMapId": 1439,
+      "name": "Darkshore",
+      "faction": "Alliance",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 11,
+      "maxLevel": 19,
+      "hubName": "Caylais Moonfeather (Darkshore)",
+      "hubCoords": {
+        "zoneId": 148,
+        "x": 36.34,
+        "y": 45.58
+      },
+      "flightNodeId": 26,
+      "flightNodeIds": [
+        26
+      ],
+      "hasBoat": true,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "493": {
+      "zoneId": 493,
+      "uiMapId": 1450,
+      "name": "Moonglade",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 15,
+      "maxLevel": 15,
+      "hubName": "Sindrayl (Moonglade)",
+      "hubCoords": {
+        "zoneId": 493,
+        "x": 48.1,
+        "y": 67.34
+      },
+      "flightNodeId": 49,
+      "flightNodeIds": [
+        49,
+        62,
+        63,
+        69
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "44": {
+      "zoneId": 44,
+      "uiMapId": 1433,
+      "name": "Redridge Mountains",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 15,
+      "maxLevel": 25,
+      "hubName": "Ariena Stormfeather (Redridge Mountains)",
+      "hubCoords": {
+        "zoneId": 44,
+        "x": 25.5,
+        "y": 59.41
+      },
+      "flightNodeId": 5,
+      "flightNodeIds": [
+        5
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "406": {
+      "zoneId": 406,
+      "uiMapId": 1442,
+      "name": "Stonetalon Mountains",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 15,
+      "maxLevel": 25,
+      "hubName": "Teloren (Stonetalon Mountains)",
+      "hubCoords": {
+        "zoneId": 406,
+        "x": 36.44,
+        "y": 7.18
+      },
+      "flightNodeId": 33,
+      "flightNodeIds": [
+        29,
+        33
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "331": {
+      "zoneId": 331,
+      "uiMapId": 1440,
+      "name": "Ashenvale",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 19,
+      "maxLevel": 30,
+      "hubName": "Daelyshia (Ashenvale)",
+      "hubCoords": {
+        "zoneId": 331,
+        "x": 34.41,
+        "y": 47.99
+      },
+      "flightNodeId": 28,
+      "flightNodeIds": [
+        28,
+        58,
+        61
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "11": {
+      "zoneId": 11,
+      "uiMapId": 1437,
+      "name": "Wetlands",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 20,
+      "maxLevel": 30,
+      "hubName": "Shellei Brondir (Wetlands)",
+      "hubCoords": {
+        "zoneId": 11,
+        "x": 9.49,
+        "y": 59.69
+      },
+      "flightNodeId": 7,
+      "flightNodeIds": [
+        7
+      ],
+      "hasBoat": true,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "267": {
+      "zoneId": 267,
+      "uiMapId": 1424,
+      "name": "Hillsbrad Foothills",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 20,
+      "maxLevel": 31,
+      "hubName": "Darla Harris (Hillsbrad Foothills)",
+      "hubCoords": {
+        "zoneId": 267,
+        "x": 49.34,
+        "y": 52.27
+      },
+      "flightNodeId": 14,
+      "flightNodeIds": [
+        13,
+        14
+      ],
+      "hasBoat": true,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "36": {
+      "zoneId": 36,
+      "uiMapId": 1416,
+      "name": "Alterac Mountains",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 27,
+      "maxLevel": 39,
+      "hubName": "Dalaran Crater Outpost",
+      "hubCoords": {
+        "zoneId": 36,
+        "x": 18.4,
+        "y": 65.8
+      },
+      "flightNodeId": null,
+      "flightNodeIds": [],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": true
+    },
+    "405": {
+      "zoneId": 405,
+      "uiMapId": 1443,
+      "name": "Desolace",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 30,
+      "maxLevel": 39,
+      "hubName": "Baritanas Skyriver (Desolace)",
+      "hubCoords": {
+        "zoneId": 405,
+        "x": 64.66,
+        "y": 10.54
+      },
+      "flightNodeId": 37,
+      "flightNodeIds": [
+        37,
+        38
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "45": {
+      "zoneId": 45,
+      "uiMapId": 1417,
+      "name": "Arathi Highlands",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 30,
+      "maxLevel": 40,
+      "hubName": "Cedrik Prose (Arathi Highlands)",
+      "hubCoords": {
+        "zoneId": 45,
+        "x": 45.73,
+        "y": 46.1
+      },
+      "flightNodeId": 16,
+      "flightNodeIds": [
+        16,
+        17
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "33": {
+      "zoneId": 33,
+      "uiMapId": 1434,
+      "name": "Stranglethorn Vale",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 30,
+      "maxLevel": 50,
+      "hubName": "Gyll (Stranglethorn Vale)",
+      "hubCoords": {
+        "zoneId": 33,
+        "x": 27.53,
+        "y": 77.79
+      },
+      "flightNodeId": 19,
+      "flightNodeIds": [
+        18,
+        19,
+        20
+      ],
+      "hasBoat": true,
+      "hasTram": false,
+      "hasZeppelin": true,
+      "hasAirship": false
+    },
+    "8": {
+      "zoneId": 8,
+      "uiMapId": 1435,
+      "name": "Swamp of Sorrows",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 36,
+      "maxLevel": 43,
+      "hubName": "Misty Reed / Harbor Approach",
+      "hubCoords": {
+        "zoneId": 8,
+        "x": 46.0,
+        "y": 56.0
+      },
+      "flightNodeId": 56,
+      "flightNodeIds": [
+        56
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "16591": {
+      "zoneId": 16591,
+      "uiMapId": 2548,
+      "name": "Riverglades",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 36,
+      "maxLevel": 44,
+      "hubName": "Gretchen Mayberry (Riverglades)",
+      "hubCoords": {
+        "zoneId": 16591,
+        "x": 58.45,
+        "y": 79.78
+      },
+      "flightNodeId": 3276,
+      "flightNodeIds": [
+        3203,
+        3276
+      ],
+      "hasBoat": true,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "3": {
+      "zoneId": 3,
+      "uiMapId": 1418,
+      "name": "Badlands",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 36,
+      "maxLevel": 45,
+      "hubName": "Theldurin / New Kargath Road",
+      "hubCoords": {
+        "zoneId": 3,
+        "x": 51.4,
+        "y": 76.9
+      },
+      "flightNodeId": 21,
+      "flightNodeIds": [
+        21
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "15": {
+      "zoneId": 15,
+      "uiMapId": 1445,
+      "name": "Dustwallow Marsh",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 36,
+      "maxLevel": 61,
+      "hubName": "Baldruc (Dustwallow Marsh)",
+      "hubCoords": {
+        "zoneId": 15,
+        "x": 67.48,
+        "y": 51.3
+      },
+      "flightNodeId": 32,
+      "flightNodeIds": [
+        32,
+        55
+      ],
+      "hasBoat": true,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "440": {
+      "zoneId": 440,
+      "uiMapId": 1446,
+      "name": "Tanaris",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 40,
+      "maxLevel": 50,
+      "hubName": "Bera Stonehammer (Tanaris)",
+      "hubCoords": {
+        "zoneId": 440,
+        "x": 51.01,
+        "y": 29.34
+      },
+      "flightNodeId": 39,
+      "flightNodeIds": [
+        39,
+        40
+      ],
+      "hasBoat": true,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "47": {
+      "zoneId": 47,
+      "uiMapId": 1425,
+      "name": "The Hinterlands",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 41,
+      "maxLevel": 56,
+      "hubName": "Guthrum Thunderfist (The Hinterlands)",
+      "hubCoords": {
+        "zoneId": 47,
+        "x": 11.07,
+        "y": 46.15
+      },
+      "flightNodeId": 43,
+      "flightNodeIds": [
+        43,
+        76
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "357": {
+      "zoneId": 357,
+      "uiMapId": 1444,
+      "name": "Feralas",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 41,
+      "maxLevel": 60,
+      "hubName": "Thyssiana (Feralas)",
+      "hubCoords": {
+        "zoneId": 357,
+        "x": 89.5,
+        "y": 45.85
+      },
+      "flightNodeId": 41,
+      "flightNodeIds": [
+        31,
+        41,
+        42
+      ],
+      "hasBoat": true,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "16": {
+      "zoneId": 16,
+      "uiMapId": 1447,
+      "name": "Azshara",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 42,
+      "maxLevel": 55,
+      "hubName": "Jarrodenus (Azshara)",
+      "hubCoords": {
+        "zoneId": 16,
+        "x": 11.9,
+        "y": 77.59
+      },
+      "flightNodeId": 64,
+      "flightNodeIds": [
+        44,
+        64
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "51": {
+      "zoneId": 51,
+      "uiMapId": 1427,
+      "name": "Searing Gorge",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 43,
+      "maxLevel": 56,
+      "hubName": "Lanie Reed (Searing Gorge)",
+      "hubCoords": {
+        "zoneId": 51,
+        "x": 37.94,
+        "y": 30.86
+      },
+      "flightNodeId": 74,
+      "flightNodeIds": [
+        74,
+        75
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "28": {
+      "zoneId": 28,
+      "uiMapId": 1422,
+      "name": "Western Plaguelands",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 46,
+      "maxLevel": 57,
+      "hubName": "Bibilfaz Featherwhistle (Western Plaguelands)",
+      "hubCoords": {
+        "zoneId": 28,
+        "x": 42.92,
+        "y": 85.06
+      },
+      "flightNodeId": 66,
+      "flightNodeIds": [
+        66
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "4": {
+      "zoneId": 4,
+      "uiMapId": 1419,
+      "name": "Blasted Lands",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 46,
+      "maxLevel": 63,
+      "hubName": "Alexandra Constantine (Blasted Lands)",
+      "hubCoords": {
+        "zoneId": 4,
+        "x": 65.54,
+        "y": 24.34
+      },
+      "flightNodeId": 45,
+      "flightNodeIds": [
+        45
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "361": {
+      "zoneId": 361,
+      "uiMapId": 1448,
+      "name": "Felwood",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 47,
+      "maxLevel": 54,
+      "hubName": "Mishellena (Felwood)",
+      "hubCoords": {
+        "zoneId": 361,
+        "x": 62.49,
+        "y": 24.24
+      },
+      "flightNodeId": 65,
+      "flightNodeIds": [
+        48,
+        65
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "490": {
+      "zoneId": 490,
+      "uiMapId": 1449,
+      "name": "Un'Goro Crater",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 48,
+      "maxLevel": 55,
+      "hubName": "Gryfe (Un'Goro Crater)",
+      "hubCoords": {
+        "zoneId": 490,
+        "x": 45.23,
+        "y": 5.83
+      },
+      "flightNodeId": 79,
+      "flightNodeIds": [
+        79
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "46": {
+      "zoneId": 46,
+      "uiMapId": 1428,
+      "name": "Burning Steppes",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 50,
+      "maxLevel": 59,
+      "hubName": "Borgus Stoutarm (Burning Steppes)",
+      "hubCoords": {
+        "zoneId": 46,
+        "x": 84.33,
+        "y": 68.33
+      },
+      "flightNodeId": 71,
+      "flightNodeIds": [
+        70,
+        71
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "41": {
+      "zoneId": 41,
+      "uiMapId": 1430,
+      "name": "Deadwind Pass",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 50,
+      "maxLevel": 60,
+      "hubName": "Karazhan / Deadwind Pass Road",
+      "hubCoords": {
+        "zoneId": 41,
+        "x": 47.0,
+        "y": 75.0
+      },
+      "flightNodeId": null,
+      "flightNodeIds": [],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "139": {
+      "zoneId": 139,
+      "uiMapId": 1423,
+      "name": "Eastern Plaguelands",
+      "faction": "Contested",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": 54,
+      "maxLevel": 59,
+      "hubName": "Khaelyn Steelwing (Eastern Plaguelands)",
+      "hubCoords": {
+        "zoneId": 139,
+        "x": 71.81,
+        "y": 49.6
+      },
+      "flightNodeId": 67,
+      "flightNodeIds": [
+        67,
+        68,
+        84,
+        85,
+        86,
+        87
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "1377": {
+      "zoneId": 1377,
+      "uiMapId": 1451,
+      "name": "Silithus",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 55,
+      "maxLevel": 59,
+      "hubName": "Cloud Skydancer (Silithus)",
+      "hubCoords": {
+        "zoneId": 1377,
+        "x": 50.58,
+        "y": 34.45
+      },
+      "flightNodeId": 73,
+      "flightNodeIds": [
+        72,
+        73
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "618": {
+      "zoneId": 618,
+      "uiMapId": 1452,
+      "name": "Winterspring",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 55,
+      "maxLevel": 60,
+      "hubName": "Maethrya (Winterspring)",
+      "hubCoords": {
+        "zoneId": 618,
+        "x": 62.33,
+        "y": 36.61
+      },
+      "flightNodeId": 52,
+      "flightNodeIds": [
+        52,
+        53
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "1657": {
+      "zoneId": 1657,
+      "uiMapId": 1457,
+      "name": "Darnassus",
+      "faction": "Alliance",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": null,
+      "maxLevel": null,
+      "hubName": "Craftsmen's Terrace, Darnassus",
+      "hubCoords": {
+        "zoneId": 1657,
+        "x": 67.4,
+        "y": 15.7
+      },
+      "flightNodeId": null,
+      "flightNodeIds": [],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "1537": {
+      "zoneId": 1537,
+      "uiMapId": 1455,
+      "name": "Ironforge",
+      "faction": "Alliance",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": null,
+      "maxLevel": null,
+      "hubName": "Gryth Thurden (Ironforge)",
+      "hubCoords": {
+        "zoneId": 1537,
+        "x": 55.5,
+        "y": 47.74
+      },
+      "flightNodeId": 6,
+      "flightNodeIds": [
+        6
+      ],
+      "hasBoat": false,
+      "hasTram": true,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "1637": {
+      "zoneId": 1637,
+      "uiMapId": 1454,
+      "name": "Orgrimmar",
+      "faction": "Horde",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": null,
+      "maxLevel": null,
+      "hubName": "Valley of Strength",
+      "hubCoords": {
+        "zoneId": 1637,
+        "x": 53.3,
+        "y": 66.5
+      },
+      "flightNodeId": 23,
+      "flightNodeIds": [
+        23
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": true,
+      "hasAirship": false
+    },
+    "1519": {
+      "zoneId": 1519,
+      "uiMapId": 1453,
+      "name": "Stormwind City",
+      "faction": "Alliance",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": null,
+      "maxLevel": null,
+      "hubName": "Dungar Longdrink (Stormwind City)",
+      "hubCoords": {
+        "zoneId": 1519,
+        "x": 71.29,
+        "y": 72.23
+      },
+      "flightNodeId": 2,
+      "flightNodeIds": [
+        2
+      ],
+      "hasBoat": true,
+      "hasTram": true,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "1638": {
+      "zoneId": 1638,
+      "uiMapId": 1456,
+      "name": "Thunder Bluff",
+      "faction": "Horde",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": null,
+      "maxLevel": null,
+      "hubName": "Thunder Bluff Lower Rise",
+      "hubCoords": {
+        "zoneId": 1638,
+        "x": 46.0,
+        "y": 59.0
+      },
+      "flightNodeId": 22,
+      "flightNodeIds": [
+        22
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "1497": {
+      "zoneId": 1497,
+      "uiMapId": 1458,
+      "name": "Undercity",
+      "faction": "Horde",
+      "continent": "Eastern Kingdoms",
+      "region": 0,
+      "minLevel": null,
+      "maxLevel": null,
+      "hubName": "Undercity Trade Quarter",
+      "hubCoords": {
+        "zoneId": 1497,
+        "x": 63.0,
+        "y": 44.0
+      },
+      "flightNodeId": 11,
+      "flightNodeIds": [
+        11
+      ],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "616": {
+      "zoneId": 616,
+      "uiMapId": 2482,
+      "name": "Mount Hyjal",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 54,
+      "maxLevel": 60,
+      "hubName": "Fayran Elthas (Mount Hyjal)",
+      "hubCoords": {
+        "zoneId": 616,
+        "x": 68.71,
+        "y": 46.8
+      },
+      "flightNodeId": null,
+      "flightNodeIds": [],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    },
+    "16651": {
+      "zoneId": 16651,
+      "uiMapId": 2652,
+      "name": "Shen'dralas",
+      "faction": "Contested",
+      "continent": "Kalimdor",
+      "region": 1,
+      "minLevel": 35,
+      "maxLevel": 45,
+      "hubName": "Adarien, Innkeeper (Shen'dralas)",
+      "hubCoords": {
+        "zoneId": 16651,
+        "x": 42.79,
+        "y": 70.48
+      },
+      "flightNodeId": null,
+      "flightNodeIds": [],
+      "hasBoat": false,
+      "hasTram": false,
+      "hasZeppelin": false,
+      "hasAirship": false
+    }
+  },
+  "edges": [
+    {
+      "fromZoneId": 3,
+      "toZoneId": 8,
+      "mode": "flight",
+      "seconds": 277,
+      "costCopper": 710,
+      "faction": "Horde",
+      "note": "Horde Flight Badlands -> Swamp of Sorrows (8315 yds)"
+    },
+    {
+      "fromZoneId": 3,
+      "toZoneId": 33,
+      "mode": "flight",
+      "seconds": 309,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight Badlands -> Stranglethorn Vale (9273 yds)"
+    },
+    {
+      "fromZoneId": 3,
+      "toZoneId": 45,
+      "mode": "flight",
+      "seconds": 259,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Badlands -> Arathi Highlands (7776 yds)"
+    },
+    {
+      "fromZoneId": 3,
+      "toZoneId": 46,
+      "mode": "flight",
+      "seconds": 85,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Badlands -> Burning Steppes (2542 yds)"
+    },
+    {
+      "fromZoneId": 3,
+      "toZoneId": 51,
+      "mode": "flight",
+      "seconds": 56,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Badlands -> Searing Gorge (1671 yds)"
+    },
+    {
+      "fromZoneId": 3,
+      "toZoneId": 1497,
+      "mode": "flight",
+      "seconds": 490,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Badlands -> Undercity (14698 yds)"
+    },
+    {
+      "fromZoneId": 3,
+      "toZoneId": 16591,
+      "mode": "flight",
+      "seconds": 126,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Badlands -> Riverglades (3784 yds)"
+    },
+    {
+      "fromZoneId": 4,
+      "toZoneId": 10,
+      "mode": "flight",
+      "seconds": 90,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Blasted Lands -> Duskwood (2700 yds)"
+    },
+    {
+      "fromZoneId": 4,
+      "toZoneId": 46,
+      "mode": "flight",
+      "seconds": 207,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Blasted Lands -> Burning Steppes (6216 yds)"
+    },
+    {
+      "fromZoneId": 4,
+      "toZoneId": 1519,
+      "mode": "flight",
+      "seconds": 186,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Blasted Lands -> Stormwind City (5593 yds)"
+    },
+    {
+      "fromZoneId": 8,
+      "toZoneId": 3,
+      "mode": "flight",
+      "seconds": 282,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Swamp of Sorrows -> Badlands (8447 yds)"
+    },
+    {
+      "fromZoneId": 8,
+      "toZoneId": 33,
+      "mode": "flight",
+      "seconds": 187,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Swamp of Sorrows -> Stranglethorn Vale (5605 yds)"
+    },
+    {
+      "fromZoneId": 8,
+      "toZoneId": 46,
+      "mode": "flight",
+      "seconds": 195,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Swamp of Sorrows -> Burning Steppes (5841 yds)"
+    },
+    {
+      "fromZoneId": 8,
+      "toZoneId": 16591,
+      "mode": "flight",
+      "seconds": 167,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Swamp of Sorrows -> Riverglades (5024 yds)"
+    },
+    {
+      "fromZoneId": 10,
+      "toZoneId": 4,
+      "mode": "flight",
+      "seconds": 96,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Duskwood -> Blasted Lands (2867 yds)"
+    },
+    {
+      "fromZoneId": 10,
+      "toZoneId": 33,
+      "mode": "flight",
+      "seconds": 169,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Duskwood -> Stranglethorn Vale (5083 yds)"
+    },
+    {
+      "fromZoneId": 10,
+      "toZoneId": 40,
+      "mode": "flight",
+      "seconds": 92,
+      "costCopper": 110,
+      "faction": "Alliance",
+      "note": "Alliance Flight Duskwood -> Westfall (2770 yds)"
+    },
+    {
+      "fromZoneId": 10,
+      "toZoneId": 44,
+      "mode": "flight",
+      "seconds": 59,
+      "costCopper": 210,
+      "faction": "Alliance",
+      "note": "Alliance Flight Duskwood -> Redridge Mountains (1767 yds)"
+    },
+    {
+      "fromZoneId": 10,
+      "toZoneId": 1519,
+      "mode": "flight",
+      "seconds": 87,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Duskwood -> Stormwind City (2609 yds)"
+    },
+    {
+      "fromZoneId": 11,
+      "toZoneId": 38,
+      "mode": "flight",
+      "seconds": 160,
+      "costCopper": 110,
+      "faction": "Alliance",
+      "note": "Alliance Flight Wetlands -> Loch Modan (4810 yds)"
+    },
+    {
+      "fromZoneId": 11,
+      "toZoneId": 45,
+      "mode": "flight",
+      "seconds": 112,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight Wetlands -> Arathi Highlands (3371 yds)"
+    },
+    {
+      "fromZoneId": 11,
+      "toZoneId": 267,
+      "mode": "flight",
+      "seconds": 107,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Wetlands -> Hillsbrad Foothills (3209 yds)"
+    },
+    {
+      "fromZoneId": 11,
+      "toZoneId": 1537,
+      "mode": "flight",
+      "seconds": 74,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Wetlands -> Ironforge (2207 yds)"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 235,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Dustwallow Marsh -> Azshara (7039 yds)"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 115,
+      "costCopper": 110,
+      "faction": "Alliance",
+      "note": "Alliance Flight Dustwallow Marsh -> The Barrens (3442 yds)"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 161,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Dustwallow Marsh -> The Barrens (4832 yds)"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 148,
+      "mode": "flight",
+      "seconds": 612,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Dustwallow Marsh -> Darkshore (18349 yds)"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 357,
+      "mode": "flight",
+      "seconds": 161,
+      "costCopper": 430,
+      "faction": "Alliance",
+      "note": "Alliance Flight Dustwallow Marsh -> Feralas (4844 yds)"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 405,
+      "mode": "flight",
+      "seconds": 331,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight Dustwallow Marsh -> Desolace (9925 yds)"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 156,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Dustwallow Marsh -> Tanaris (4689 yds)"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 221,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Dustwallow Marsh -> Tanaris (6628 yds)"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 1637,
+      "mode": "flight",
+      "seconds": 214,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Dustwallow Marsh -> Orgrimmar (6423 yds)"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 1638,
+      "mode": "flight",
+      "seconds": 222,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Dustwallow Marsh -> Thunder Bluff (6663 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 15,
+      "mode": "flight",
+      "seconds": 240,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Azshara -> Dustwallow Marsh (7202 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 135,
+      "costCopper": 110,
+      "faction": "Alliance",
+      "note": "Alliance Flight Azshara -> The Barrens (4055 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 171,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Azshara -> The Barrens (5137 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 148,
+      "mode": "flight",
+      "seconds": 301,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Azshara -> Darkshore (9016 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 331,
+      "mode": "flight",
+      "seconds": 152,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Azshara -> Ashenvale (4566 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 331,
+      "mode": "flight",
+      "seconds": 93,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight Azshara -> Ashenvale (2782 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 361,
+      "mode": "flight",
+      "seconds": 282,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Azshara -> Felwood (8462 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 361,
+      "mode": "flight",
+      "seconds": 231,
+      "costCopper": 930,
+      "faction": "Horde",
+      "note": "Horde Flight Azshara -> Felwood (6918 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 618,
+      "mode": "flight",
+      "seconds": 171,
+      "costCopper": 1030,
+      "faction": "Alliance",
+      "note": "Alliance Flight Azshara -> Winterspring (5125 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 618,
+      "mode": "flight",
+      "seconds": 122,
+      "costCopper": 1020,
+      "faction": "Horde",
+      "note": "Horde Flight Azshara -> Winterspring (3672 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 1637,
+      "mode": "flight",
+      "seconds": 119,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Azshara -> Orgrimmar (3575 yds)"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 1638,
+      "mode": "flight",
+      "seconds": 254,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Azshara -> Thunder Bluff (7619 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 15,
+      "mode": "flight",
+      "seconds": 105,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight The Barrens -> Dustwallow Marsh (3144 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 15,
+      "mode": "flight",
+      "seconds": 162,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight The Barrens -> Dustwallow Marsh (4866 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 131,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight The Barrens -> Azshara (3941 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 166,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight The Barrens -> Azshara (4994 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 331,
+      "mode": "flight",
+      "seconds": 162,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight The Barrens -> Ashenvale (4847 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 357,
+      "mode": "flight",
+      "seconds": 250,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight The Barrens -> Feralas (7504 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 361,
+      "mode": "flight",
+      "seconds": 251,
+      "costCopper": 930,
+      "faction": "Horde",
+      "note": "Horde Flight The Barrens -> Felwood (7526 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 400,
+      "mode": "flight",
+      "seconds": 124,
+      "costCopper": 430,
+      "faction": "Horde",
+      "note": "Horde Flight The Barrens -> Thousand Needles (3729 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 406,
+      "mode": "flight",
+      "seconds": 149,
+      "costCopper": 210,
+      "faction": "Horde",
+      "note": "Horde Flight The Barrens -> Stonetalon Mountains (4481 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 300,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight The Barrens -> Tanaris (9002 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 1637,
+      "mode": "flight",
+      "seconds": 141,
+      "costCopper": 110,
+      "faction": "Horde",
+      "note": "Horde Flight The Barrens -> Orgrimmar (4240 yds)"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 1638,
+      "mode": "flight",
+      "seconds": 112,
+      "costCopper": 110,
+      "faction": "Horde",
+      "note": "Horde Flight The Barrens -> Thunder Bluff (3371 yds)"
+    },
+    {
+      "fromZoneId": 28,
+      "toZoneId": 47,
+      "mode": "flight",
+      "seconds": 64,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Western Plaguelands -> The Hinterlands (1926 yds)"
+    },
+    {
+      "fromZoneId": 28,
+      "toZoneId": 139,
+      "mode": "flight",
+      "seconds": 146,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight Western Plaguelands -> Eastern Plaguelands (4369 yds)"
+    },
+    {
+      "fromZoneId": 28,
+      "toZoneId": 267,
+      "mode": "flight",
+      "seconds": 84,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Western Plaguelands -> Hillsbrad Foothills (2535 yds)"
+    },
+    {
+      "fromZoneId": 28,
+      "toZoneId": 1537,
+      "mode": "flight",
+      "seconds": 250,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight Western Plaguelands -> Ironforge (7515 yds)"
+    },
+    {
+      "fromZoneId": 33,
+      "toZoneId": 3,
+      "mode": "flight",
+      "seconds": 323,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Stranglethorn Vale -> Badlands (9703 yds)"
+    },
+    {
+      "fromZoneId": 33,
+      "toZoneId": 8,
+      "mode": "flight",
+      "seconds": 203,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Stranglethorn Vale -> Swamp of Sorrows (6103 yds)"
+    },
+    {
+      "fromZoneId": 33,
+      "toZoneId": 10,
+      "mode": "flight",
+      "seconds": 174,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stranglethorn Vale -> Duskwood (5210 yds)"
+    },
+    {
+      "fromZoneId": 33,
+      "toZoneId": 40,
+      "mode": "flight",
+      "seconds": 181,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stranglethorn Vale -> Westfall (5417 yds)"
+    },
+    {
+      "fromZoneId": 33,
+      "toZoneId": 1519,
+      "mode": "flight",
+      "seconds": 218,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stranglethorn Vale -> Stormwind City (6548 yds)"
+    },
+    {
+      "fromZoneId": 38,
+      "toZoneId": 11,
+      "mode": "flight",
+      "seconds": 148,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Loch Modan -> Wetlands (4429 yds)"
+    },
+    {
+      "fromZoneId": 38,
+      "toZoneId": 45,
+      "mode": "flight",
+      "seconds": 161,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight Loch Modan -> Arathi Highlands (4839 yds)"
+    },
+    {
+      "fromZoneId": 38,
+      "toZoneId": 1537,
+      "mode": "flight",
+      "seconds": 105,
+      "costCopper": 110,
+      "faction": "Alliance",
+      "note": "Alliance Flight Loch Modan -> Ironforge (3152 yds)"
+    },
+    {
+      "fromZoneId": 38,
+      "toZoneId": 16591,
+      "mode": "flight",
+      "seconds": 182,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Loch Modan -> Riverglades (5447 yds)"
+    },
+    {
+      "fromZoneId": 40,
+      "toZoneId": 10,
+      "mode": "flight",
+      "seconds": 96,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Westfall -> Duskwood (2878 yds)"
+    },
+    {
+      "fromZoneId": 40,
+      "toZoneId": 33,
+      "mode": "flight",
+      "seconds": 184,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Westfall -> Stranglethorn Vale (5526 yds)"
+    },
+    {
+      "fromZoneId": 40,
+      "toZoneId": 44,
+      "mode": "flight",
+      "seconds": 129,
+      "costCopper": 210,
+      "faction": "Alliance",
+      "note": "Alliance Flight Westfall -> Redridge Mountains (3865 yds)"
+    },
+    {
+      "fromZoneId": 40,
+      "toZoneId": 1519,
+      "mode": "flight",
+      "seconds": 81,
+      "costCopper": 110,
+      "faction": "Alliance",
+      "note": "Alliance Flight Westfall -> Stormwind City (2435 yds)"
+    },
+    {
+      "fromZoneId": 44,
+      "toZoneId": 10,
+      "mode": "flight",
+      "seconds": 59,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Redridge Mountains -> Duskwood (1784 yds)"
+    },
+    {
+      "fromZoneId": 44,
+      "toZoneId": 40,
+      "mode": "flight",
+      "seconds": 133,
+      "costCopper": 110,
+      "faction": "Alliance",
+      "note": "Alliance Flight Redridge Mountains -> Westfall (3990 yds)"
+    },
+    {
+      "fromZoneId": 44,
+      "toZoneId": 46,
+      "mode": "flight",
+      "seconds": 60,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Redridge Mountains -> Burning Steppes (1809 yds)"
+    },
+    {
+      "fromZoneId": 44,
+      "toZoneId": 1519,
+      "mode": "flight",
+      "seconds": 112,
+      "costCopper": 210,
+      "faction": "Alliance",
+      "note": "Alliance Flight Redridge Mountains -> Stormwind City (3354 yds)"
+    },
+    {
+      "fromZoneId": 44,
+      "toZoneId": 16591,
+      "mode": "flight",
+      "seconds": 131,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Redridge Mountains -> Riverglades (3929 yds)"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 3,
+      "mode": "flight",
+      "seconds": 255,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Arathi Highlands -> Badlands (7650 yds)"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 11,
+      "mode": "flight",
+      "seconds": 125,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Arathi Highlands -> Wetlands (3753 yds)"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 38,
+      "mode": "flight",
+      "seconds": 168,
+      "costCopper": 110,
+      "faction": "Alliance",
+      "note": "Alliance Flight Arathi Highlands -> Loch Modan (5053 yds)"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 47,
+      "mode": "flight",
+      "seconds": 71,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Arathi Highlands -> The Hinterlands (2124 yds)"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 47,
+      "mode": "flight",
+      "seconds": 85,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Arathi Highlands -> The Hinterlands (2554 yds)"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 267,
+      "mode": "flight",
+      "seconds": 86,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Arathi Highlands -> Hillsbrad Foothills (2583 yds)"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 267,
+      "mode": "flight",
+      "seconds": 116,
+      "costCopper": 330,
+      "faction": "Horde",
+      "note": "Horde Flight Arathi Highlands -> Hillsbrad Foothills (3482 yds)"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 1497,
+      "mode": "flight",
+      "seconds": 255,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight Arathi Highlands -> Undercity (7653 yds)"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 1537,
+      "mode": "flight",
+      "seconds": 264,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight Arathi Highlands -> Ironforge (7917 yds)"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 16591,
+      "mode": "flight",
+      "seconds": 321,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Arathi Highlands -> Riverglades (9633 yds)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 3,
+      "mode": "flight",
+      "seconds": 98,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Burning Steppes -> Badlands (2945 yds)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 4,
+      "mode": "flight",
+      "seconds": 208,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Burning Steppes -> Blasted Lands (6237 yds)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 8,
+      "mode": "flight",
+      "seconds": 210,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Burning Steppes -> Swamp of Sorrows (6300 yds)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 44,
+      "mode": "flight",
+      "seconds": 62,
+      "costCopper": 210,
+      "faction": "Alliance",
+      "note": "Alliance Flight Burning Steppes -> Redridge Mountains (1862 yds)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 51,
+      "mode": "flight",
+      "seconds": 102,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Burning Steppes -> Searing Gorge (3061 yds)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 51,
+      "mode": "flight",
+      "seconds": 71,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Burning Steppes -> Searing Gorge (2117 yds)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 1519,
+      "mode": "flight",
+      "seconds": 149,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Burning Steppes -> Stormwind City (4476 yds)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 16591,
+      "mode": "flight",
+      "seconds": 130,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Burning Steppes -> Riverglades (3912 yds)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 16591,
+      "mode": "flight",
+      "seconds": 136,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Burning Steppes -> Riverglades (4088 yds)"
+    },
+    {
+      "fromZoneId": 47,
+      "toZoneId": 28,
+      "mode": "flight",
+      "seconds": 52,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight The Hinterlands -> Western Plaguelands (1556 yds)"
+    },
+    {
+      "fromZoneId": 47,
+      "toZoneId": 45,
+      "mode": "flight",
+      "seconds": 75,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight The Hinterlands -> Arathi Highlands (2238 yds)"
+    },
+    {
+      "fromZoneId": 47,
+      "toZoneId": 45,
+      "mode": "flight",
+      "seconds": 89,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight The Hinterlands -> Arathi Highlands (2673 yds)"
+    },
+    {
+      "fromZoneId": 47,
+      "toZoneId": 139,
+      "mode": "flight",
+      "seconds": 160,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight The Hinterlands -> Eastern Plaguelands (4801 yds)"
+    },
+    {
+      "fromZoneId": 47,
+      "toZoneId": 139,
+      "mode": "flight",
+      "seconds": 137,
+      "costCopper": 1030,
+      "faction": "Horde",
+      "note": "Horde Flight The Hinterlands -> Eastern Plaguelands (4105 yds)"
+    },
+    {
+      "fromZoneId": 47,
+      "toZoneId": 267,
+      "mode": "flight",
+      "seconds": 68,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight The Hinterlands -> Hillsbrad Foothills (2025 yds)"
+    },
+    {
+      "fromZoneId": 47,
+      "toZoneId": 267,
+      "mode": "flight",
+      "seconds": 158,
+      "costCopper": 330,
+      "faction": "Horde",
+      "note": "Horde Flight The Hinterlands -> Hillsbrad Foothills (4741 yds)"
+    },
+    {
+      "fromZoneId": 47,
+      "toZoneId": 1497,
+      "mode": "flight",
+      "seconds": 280,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight The Hinterlands -> Undercity (8413 yds)"
+    },
+    {
+      "fromZoneId": 47,
+      "toZoneId": 1537,
+      "mode": "flight",
+      "seconds": 246,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight The Hinterlands -> Ironforge (7366 yds)"
+    },
+    {
+      "fromZoneId": 51,
+      "toZoneId": 3,
+      "mode": "flight",
+      "seconds": 69,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Searing Gorge -> Badlands (2078 yds)"
+    },
+    {
+      "fromZoneId": 51,
+      "toZoneId": 46,
+      "mode": "flight",
+      "seconds": 95,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Searing Gorge -> Burning Steppes (2837 yds)"
+    },
+    {
+      "fromZoneId": 51,
+      "toZoneId": 46,
+      "mode": "flight",
+      "seconds": 76,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Searing Gorge -> Burning Steppes (2270 yds)"
+    },
+    {
+      "fromZoneId": 51,
+      "toZoneId": 1537,
+      "mode": "flight",
+      "seconds": 91,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Searing Gorge -> Ironforge (2738 yds)"
+    },
+    {
+      "fromZoneId": 130,
+      "toZoneId": 267,
+      "mode": "flight",
+      "seconds": 95,
+      "costCopper": 330,
+      "faction": "Horde",
+      "note": "Horde Flight Silverpine Forest -> Hillsbrad Foothills (2849 yds)"
+    },
+    {
+      "fromZoneId": 130,
+      "toZoneId": 1497,
+      "mode": "flight",
+      "seconds": 110,
+      "costCopper": 110,
+      "faction": "Horde",
+      "note": "Horde Flight Silverpine Forest -> Undercity (3286 yds)"
+    },
+    {
+      "fromZoneId": 139,
+      "toZoneId": 28,
+      "mode": "flight",
+      "seconds": 148,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight Eastern Plaguelands -> Western Plaguelands (4444 yds)"
+    },
+    {
+      "fromZoneId": 139,
+      "toZoneId": 47,
+      "mode": "flight",
+      "seconds": 159,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Eastern Plaguelands -> The Hinterlands (4756 yds)"
+    },
+    {
+      "fromZoneId": 139,
+      "toZoneId": 47,
+      "mode": "flight",
+      "seconds": 139,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Eastern Plaguelands -> The Hinterlands (4176 yds)"
+    },
+    {
+      "fromZoneId": 139,
+      "toZoneId": 1497,
+      "mode": "flight",
+      "seconds": 259,
+      "costCopper": 1020,
+      "faction": "Horde",
+      "note": "Horde Flight Eastern Plaguelands -> Undercity (7763 yds)"
+    },
+    {
+      "fromZoneId": 139,
+      "toZoneId": 1537,
+      "mode": "flight",
+      "seconds": 356,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight Eastern Plaguelands -> Ironforge (10678 yds)"
+    },
+    {
+      "fromZoneId": 141,
+      "toZoneId": 148,
+      "mode": "flight",
+      "seconds": 85,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "Alliance Flight Teldrassil -> Darkshore (2536 yds)"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 15,
+      "mode": "flight",
+      "seconds": 664,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Darkshore -> Dustwallow Marsh (19910 yds)"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 298,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Darkshore -> Azshara (8951 yds)"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 141,
+      "mode": "flight",
+      "seconds": 84,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "Alliance Flight Darkshore -> Teldrassil (2513 yds)"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 331,
+      "mode": "flight",
+      "seconds": 175,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Darkshore -> Ashenvale (5250 yds)"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 357,
+      "mode": "flight",
+      "seconds": 466,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Darkshore -> Feralas (13979 yds)"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 361,
+      "mode": "flight",
+      "seconds": 185,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Darkshore -> Felwood (5562 yds)"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 405,
+      "mode": "flight",
+      "seconds": 286,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight Darkshore -> Desolace (8593 yds)"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 406,
+      "mode": "flight",
+      "seconds": 177,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Darkshore -> Stonetalon Mountains (5310 yds)"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 493,
+      "mode": "flight",
+      "seconds": 145,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Darkshore -> Moonglade (4346 yds)"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 11,
+      "mode": "flight",
+      "seconds": 110,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Hillsbrad Foothills -> Wetlands (3296 yds)"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 28,
+      "mode": "flight",
+      "seconds": 80,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Hillsbrad Foothills -> Western Plaguelands (2407 yds)"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 45,
+      "mode": "flight",
+      "seconds": 73,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight Hillsbrad Foothills -> Arathi Highlands (2195 yds)"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 45,
+      "mode": "flight",
+      "seconds": 117,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight Hillsbrad Foothills -> Arathi Highlands (3523 yds)"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 47,
+      "mode": "flight",
+      "seconds": 70,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Hillsbrad Foothills -> The Hinterlands (2112 yds)"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 47,
+      "mode": "flight",
+      "seconds": 194,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Hillsbrad Foothills -> The Hinterlands (5815 yds)"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 130,
+      "mode": "flight",
+      "seconds": 99,
+      "costCopper": 110,
+      "faction": "Horde",
+      "note": "Horde Flight Hillsbrad Foothills -> Silverpine Forest (2975 yds)"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 1497,
+      "mode": "flight",
+      "seconds": 135,
+      "costCopper": 330,
+      "faction": "Horde",
+      "note": "Horde Flight Hillsbrad Foothills -> Undercity (4059 yds)"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 1537,
+      "mode": "flight",
+      "seconds": 190,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Hillsbrad Foothills -> Ironforge (5696 yds)"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 147,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ashenvale -> Azshara (4414 yds)"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 95,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Ashenvale -> Azshara (2858 yds)"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 159,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight Ashenvale -> The Barrens (4782 yds)"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 148,
+      "mode": "flight",
+      "seconds": 147,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ashenvale -> Darkshore (4409 yds)"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 406,
+      "mode": "flight",
+      "seconds": 149,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ashenvale -> Stonetalon Mountains (4477 yds)"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 1637,
+      "mode": "flight",
+      "seconds": 95,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight Ashenvale -> Orgrimmar (2853 yds)"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 15,
+      "mode": "flight",
+      "seconds": 157,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Feralas -> Dustwallow Marsh (4722 yds)"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 262,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Feralas -> The Barrens (7862 yds)"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 148,
+      "mode": "flight",
+      "seconds": 460,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Feralas -> Darkshore (13810 yds)"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 400,
+      "mode": "flight",
+      "seconds": 106,
+      "costCopper": 430,
+      "faction": "Horde",
+      "note": "Horde Flight Feralas -> Thousand Needles (3191 yds)"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 405,
+      "mode": "flight",
+      "seconds": 225,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Feralas -> Desolace (6760 yds)"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 405,
+      "mode": "flight",
+      "seconds": 199,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Feralas -> Desolace (5964 yds)"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 170,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Feralas -> Tanaris (5085 yds)"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 199,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Feralas -> Tanaris (5963 yds)"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 1377,
+      "mode": "flight",
+      "seconds": 157,
+      "costCopper": 1030,
+      "faction": "Alliance",
+      "note": "Alliance Flight Feralas -> Silithus (4714 yds)"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 1377,
+      "mode": "flight",
+      "seconds": 128,
+      "costCopper": 1030,
+      "faction": "Horde",
+      "note": "Horde Flight Feralas -> Silithus (3839 yds)"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 1638,
+      "mode": "flight",
+      "seconds": 256,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Feralas -> Thunder Bluff (7693 yds)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 281,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Felwood -> Azshara (8426 yds)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 240,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Felwood -> Azshara (7187 yds)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 240,
+      "costCopper": 930,
+      "faction": "Horde",
+      "note": "Horde Flight Felwood -> The Barrens (7186 yds)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 148,
+      "mode": "flight",
+      "seconds": 183,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Felwood -> Darkshore (5501 yds)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 493,
+      "mode": "flight",
+      "seconds": 65,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight Felwood -> Moonglade (1941 yds)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 493,
+      "mode": "flight",
+      "seconds": 160,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Felwood -> Moonglade (4800 yds)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 618,
+      "mode": "flight",
+      "seconds": 118,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight Felwood -> Winterspring (3531 yds)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 618,
+      "mode": "flight",
+      "seconds": 187,
+      "costCopper": 1020,
+      "faction": "Horde",
+      "note": "Horde Flight Felwood -> Winterspring (5604 yds)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 1637,
+      "mode": "flight",
+      "seconds": 257,
+      "costCopper": 930,
+      "faction": "Horde",
+      "note": "Horde Flight Felwood -> Orgrimmar (7700 yds)"
+    },
+    {
+      "fromZoneId": 400,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 136,
+      "costCopper": 430,
+      "faction": "Horde",
+      "note": "Horde Flight Thousand Needles -> The Barrens (4065 yds)"
+    },
+    {
+      "fromZoneId": 400,
+      "toZoneId": 357,
+      "mode": "flight",
+      "seconds": 122,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Thousand Needles -> Feralas (3654 yds)"
+    },
+    {
+      "fromZoneId": 400,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 91,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Thousand Needles -> Tanaris (2735 yds)"
+    },
+    {
+      "fromZoneId": 400,
+      "toZoneId": 1638,
+      "mode": "flight",
+      "seconds": 223,
+      "costCopper": 430,
+      "faction": "Horde",
+      "note": "Horde Flight Thousand Needles -> Thunder Bluff (6690 yds)"
+    },
+    {
+      "fromZoneId": 405,
+      "toZoneId": 15,
+      "mode": "flight",
+      "seconds": 303,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight Desolace -> Dustwallow Marsh (9080 yds)"
+    },
+    {
+      "fromZoneId": 405,
+      "toZoneId": 148,
+      "mode": "flight",
+      "seconds": 278,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight Desolace -> Darkshore (8325 yds)"
+    },
+    {
+      "fromZoneId": 405,
+      "toZoneId": 357,
+      "mode": "flight",
+      "seconds": 230,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Desolace -> Feralas (6904 yds)"
+    },
+    {
+      "fromZoneId": 405,
+      "toZoneId": 357,
+      "mode": "flight",
+      "seconds": 194,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Desolace -> Feralas (5826 yds)"
+    },
+    {
+      "fromZoneId": 405,
+      "toZoneId": 406,
+      "mode": "flight",
+      "seconds": 115,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Desolace -> Stonetalon Mountains (3461 yds)"
+    },
+    {
+      "fromZoneId": 405,
+      "toZoneId": 406,
+      "mode": "flight",
+      "seconds": 196,
+      "costCopper": 210,
+      "faction": "Horde",
+      "note": "Horde Flight Desolace -> Stonetalon Mountains (5882 yds)"
+    },
+    {
+      "fromZoneId": 405,
+      "toZoneId": 1638,
+      "mode": "flight",
+      "seconds": 175,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight Desolace -> Thunder Bluff (5240 yds)"
+    },
+    {
+      "fromZoneId": 406,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 148,
+      "costCopper": 210,
+      "faction": "Horde",
+      "note": "Horde Flight Stonetalon Mountains -> The Barrens (4448 yds)"
+    },
+    {
+      "fromZoneId": 406,
+      "toZoneId": 148,
+      "mode": "flight",
+      "seconds": 174,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stonetalon Mountains -> Darkshore (5210 yds)"
+    },
+    {
+      "fromZoneId": 406,
+      "toZoneId": 331,
+      "mode": "flight",
+      "seconds": 150,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stonetalon Mountains -> Ashenvale (4515 yds)"
+    },
+    {
+      "fromZoneId": 406,
+      "toZoneId": 405,
+      "mode": "flight",
+      "seconds": 123,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stonetalon Mountains -> Desolace (3678 yds)"
+    },
+    {
+      "fromZoneId": 406,
+      "toZoneId": 405,
+      "mode": "flight",
+      "seconds": 140,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight Stonetalon Mountains -> Desolace (4199 yds)"
+    },
+    {
+      "fromZoneId": 406,
+      "toZoneId": 1638,
+      "mode": "flight",
+      "seconds": 172,
+      "costCopper": 210,
+      "faction": "Horde",
+      "note": "Horde Flight Stonetalon Mountains -> Thunder Bluff (5152 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 15,
+      "mode": "flight",
+      "seconds": 153,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Tanaris -> Dustwallow Marsh (4595 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 15,
+      "mode": "flight",
+      "seconds": 221,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Tanaris -> Dustwallow Marsh (6617 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 298,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Tanaris -> The Barrens (8926 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 357,
+      "mode": "flight",
+      "seconds": 175,
+      "costCopper": 430,
+      "faction": "Alliance",
+      "note": "Alliance Flight Tanaris -> Feralas (5255 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 357,
+      "mode": "flight",
+      "seconds": 197,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Tanaris -> Feralas (5906 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 400,
+      "mode": "flight",
+      "seconds": 85,
+      "costCopper": 430,
+      "faction": "Horde",
+      "note": "Horde Flight Tanaris -> Thousand Needles (2562 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 490,
+      "mode": "flight",
+      "seconds": 102,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Tanaris -> Un'Goro Crater (3052 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 490,
+      "mode": "flight",
+      "seconds": 105,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Tanaris -> Un'Goro Crater (3143 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 1377,
+      "mode": "flight",
+      "seconds": 190,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight Tanaris -> Silithus (5694 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 1377,
+      "mode": "flight",
+      "seconds": 228,
+      "costCopper": 1020,
+      "faction": "Horde",
+      "note": "Horde Flight Tanaris -> Silithus (6847 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 1637,
+      "mode": "flight",
+      "seconds": 349,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Tanaris -> Orgrimmar (10462 yds)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 1638,
+      "mode": "flight",
+      "seconds": 300,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Tanaris -> Thunder Bluff (9002 yds)"
+    },
+    {
+      "fromZoneId": 490,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 102,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Un'Goro Crater -> Tanaris (3045 yds)"
+    },
+    {
+      "fromZoneId": 490,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 111,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Un'Goro Crater -> Tanaris (3341 yds)"
+    },
+    {
+      "fromZoneId": 490,
+      "toZoneId": 1377,
+      "mode": "flight",
+      "seconds": 92,
+      "costCopper": 1030,
+      "faction": "Alliance",
+      "note": "Alliance Flight Un'Goro Crater -> Silithus (2759 yds)"
+    },
+    {
+      "fromZoneId": 490,
+      "toZoneId": 1377,
+      "mode": "flight",
+      "seconds": 98,
+      "costCopper": 1030,
+      "faction": "Horde",
+      "note": "Horde Flight Un'Goro Crater -> Silithus (2945 yds)"
+    },
+    {
+      "fromZoneId": 493,
+      "toZoneId": 141,
+      "mode": "flight",
+      "seconds": 144,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "Alliance Flight Moonglade -> Teldrassil (4324 yds)"
+    },
+    {
+      "fromZoneId": 493,
+      "toZoneId": 148,
+      "mode": "flight",
+      "seconds": 136,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Moonglade -> Darkshore (4095 yds)"
+    },
+    {
+      "fromZoneId": 493,
+      "toZoneId": 361,
+      "mode": "flight",
+      "seconds": 59,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Moonglade -> Felwood (1766 yds)"
+    },
+    {
+      "fromZoneId": 493,
+      "toZoneId": 361,
+      "mode": "flight",
+      "seconds": 152,
+      "costCopper": 930,
+      "faction": "Horde",
+      "note": "Horde Flight Moonglade -> Felwood (4552 yds)"
+    },
+    {
+      "fromZoneId": 493,
+      "toZoneId": 618,
+      "mode": "flight",
+      "seconds": 128,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight Moonglade -> Winterspring (3828 yds)"
+    },
+    {
+      "fromZoneId": 493,
+      "toZoneId": 618,
+      "mode": "flight",
+      "seconds": 137,
+      "costCopper": 1020,
+      "faction": "Horde",
+      "note": "Horde Flight Moonglade -> Winterspring (4117 yds)"
+    },
+    {
+      "fromZoneId": 493,
+      "toZoneId": 1638,
+      "mode": "flight",
+      "seconds": 529,
+      "costCopper": 0,
+      "faction": "Horde",
+      "note": "Horde Flight Moonglade -> Thunder Bluff (15876 yds)"
+    },
+    {
+      "fromZoneId": 618,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 169,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Winterspring -> Azshara (5073 yds)"
+    },
+    {
+      "fromZoneId": 618,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 127,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Winterspring -> Azshara (3824 yds)"
+    },
+    {
+      "fromZoneId": 618,
+      "toZoneId": 361,
+      "mode": "flight",
+      "seconds": 120,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Winterspring -> Felwood (3599 yds)"
+    },
+    {
+      "fromZoneId": 618,
+      "toZoneId": 361,
+      "mode": "flight",
+      "seconds": 193,
+      "costCopper": 930,
+      "faction": "Horde",
+      "note": "Horde Flight Winterspring -> Felwood (5791 yds)"
+    },
+    {
+      "fromZoneId": 618,
+      "toZoneId": 493,
+      "mode": "flight",
+      "seconds": 119,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Winterspring -> Moonglade (3563 yds)"
+    },
+    {
+      "fromZoneId": 618,
+      "toZoneId": 493,
+      "mode": "flight",
+      "seconds": 129,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Winterspring -> Moonglade (3882 yds)"
+    },
+    {
+      "fromZoneId": 618,
+      "toZoneId": 1637,
+      "mode": "flight",
+      "seconds": 294,
+      "costCopper": 1020,
+      "faction": "Horde",
+      "note": "Horde Flight Winterspring -> Orgrimmar (8824 yds)"
+    },
+    {
+      "fromZoneId": 1377,
+      "toZoneId": 357,
+      "mode": "flight",
+      "seconds": 172,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Silithus -> Feralas (5153 yds)"
+    },
+    {
+      "fromZoneId": 1377,
+      "toZoneId": 357,
+      "mode": "flight",
+      "seconds": 128,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Silithus -> Feralas (3840 yds)"
+    },
+    {
+      "fromZoneId": 1377,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 184,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Silithus -> Tanaris (5511 yds)"
+    },
+    {
+      "fromZoneId": 1377,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 236,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Silithus -> Tanaris (7080 yds)"
+    },
+    {
+      "fromZoneId": 1377,
+      "toZoneId": 490,
+      "mode": "flight",
+      "seconds": 89,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Silithus -> Un'Goro Crater (2668 yds)"
+    },
+    {
+      "fromZoneId": 1377,
+      "toZoneId": 490,
+      "mode": "flight",
+      "seconds": 95,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Silithus -> Un'Goro Crater (2836 yds)"
+    },
+    {
+      "fromZoneId": 1497,
+      "toZoneId": 3,
+      "mode": "flight",
+      "seconds": 492,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Undercity -> Badlands (14774 yds)"
+    },
+    {
+      "fromZoneId": 1497,
+      "toZoneId": 45,
+      "mode": "flight",
+      "seconds": 297,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight Undercity -> Arathi Highlands (8917 yds)"
+    },
+    {
+      "fromZoneId": 1497,
+      "toZoneId": 47,
+      "mode": "flight",
+      "seconds": 280,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Undercity -> The Hinterlands (8402 yds)"
+    },
+    {
+      "fromZoneId": 1497,
+      "toZoneId": 130,
+      "mode": "flight",
+      "seconds": 104,
+      "costCopper": 110,
+      "faction": "Horde",
+      "note": "Horde Flight Undercity -> Silverpine Forest (3117 yds)"
+    },
+    {
+      "fromZoneId": 1497,
+      "toZoneId": 139,
+      "mode": "flight",
+      "seconds": 259,
+      "costCopper": 1020,
+      "faction": "Horde",
+      "note": "Horde Flight Undercity -> Eastern Plaguelands (7774 yds)"
+    },
+    {
+      "fromZoneId": 1497,
+      "toZoneId": 267,
+      "mode": "flight",
+      "seconds": 138,
+      "costCopper": 330,
+      "faction": "Horde",
+      "note": "Horde Flight Undercity -> Hillsbrad Foothills (4150 yds)"
+    },
+    {
+      "fromZoneId": 1519,
+      "toZoneId": 4,
+      "mode": "flight",
+      "seconds": 175,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stormwind City -> Blasted Lands (5262 yds)"
+    },
+    {
+      "fromZoneId": 1519,
+      "toZoneId": 10,
+      "mode": "flight",
+      "seconds": 115,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stormwind City -> Duskwood (3456 yds)"
+    },
+    {
+      "fromZoneId": 1519,
+      "toZoneId": 33,
+      "mode": "flight",
+      "seconds": 243,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stormwind City -> Stranglethorn Vale (7278 yds)"
+    },
+    {
+      "fromZoneId": 1519,
+      "toZoneId": 40,
+      "mode": "flight",
+      "seconds": 76,
+      "costCopper": 110,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stormwind City -> Westfall (2290 yds)"
+    },
+    {
+      "fromZoneId": 1519,
+      "toZoneId": 44,
+      "mode": "flight",
+      "seconds": 111,
+      "costCopper": 210,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stormwind City -> Redridge Mountains (3342 yds)"
+    },
+    {
+      "fromZoneId": 1519,
+      "toZoneId": 46,
+      "mode": "flight",
+      "seconds": 156,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stormwind City -> Burning Steppes (4666 yds)"
+    },
+    {
+      "fromZoneId": 1519,
+      "toZoneId": 1537,
+      "mode": "flight",
+      "seconds": 254,
+      "costCopper": 50,
+      "faction": "Alliance",
+      "note": "Alliance Flight Stormwind City -> Ironforge (7628 yds)"
+    },
+    {
+      "fromZoneId": 1537,
+      "toZoneId": 11,
+      "mode": "flight",
+      "seconds": 123,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ironforge -> Wetlands (3694 yds)"
+    },
+    {
+      "fromZoneId": 1537,
+      "toZoneId": 28,
+      "mode": "flight",
+      "seconds": 284,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ironforge -> Western Plaguelands (8511 yds)"
+    },
+    {
+      "fromZoneId": 1537,
+      "toZoneId": 38,
+      "mode": "flight",
+      "seconds": 97,
+      "costCopper": 110,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ironforge -> Loch Modan (2915 yds)"
+    },
+    {
+      "fromZoneId": 1537,
+      "toZoneId": 45,
+      "mode": "flight",
+      "seconds": 248,
+      "costCopper": 530,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ironforge -> Arathi Highlands (7443 yds)"
+    },
+    {
+      "fromZoneId": 1537,
+      "toZoneId": 47,
+      "mode": "flight",
+      "seconds": 292,
+      "costCopper": 730,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ironforge -> The Hinterlands (8745 yds)"
+    },
+    {
+      "fromZoneId": 1537,
+      "toZoneId": 51,
+      "mode": "flight",
+      "seconds": 84,
+      "costCopper": 830,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ironforge -> Searing Gorge (2522 yds)"
+    },
+    {
+      "fromZoneId": 1537,
+      "toZoneId": 139,
+      "mode": "flight",
+      "seconds": 338,
+      "costCopper": 1020,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ironforge -> Eastern Plaguelands (10147 yds)"
+    },
+    {
+      "fromZoneId": 1537,
+      "toZoneId": 267,
+      "mode": "flight",
+      "seconds": 258,
+      "costCopper": 330,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ironforge -> Hillsbrad Foothills (7748 yds)"
+    },
+    {
+      "fromZoneId": 1537,
+      "toZoneId": 1519,
+      "mode": "flight",
+      "seconds": 203,
+      "costCopper": 50,
+      "faction": "Alliance",
+      "note": "Alliance Flight Ironforge -> Stormwind City (6103 yds)"
+    },
+    {
+      "fromZoneId": 1637,
+      "toZoneId": 15,
+      "mode": "flight",
+      "seconds": 226,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Orgrimmar -> Dustwallow Marsh (6789 yds)"
+    },
+    {
+      "fromZoneId": 1637,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 98,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Orgrimmar -> Azshara (2928 yds)"
+    },
+    {
+      "fromZoneId": 1637,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 108,
+      "costCopper": 110,
+      "faction": "Horde",
+      "note": "Horde Flight Orgrimmar -> The Barrens (3240 yds)"
+    },
+    {
+      "fromZoneId": 1637,
+      "toZoneId": 331,
+      "mode": "flight",
+      "seconds": 89,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight Orgrimmar -> Ashenvale (2665 yds)"
+    },
+    {
+      "fromZoneId": 1637,
+      "toZoneId": 361,
+      "mode": "flight",
+      "seconds": 250,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Orgrimmar -> Felwood (7497 yds)"
+    },
+    {
+      "fromZoneId": 1637,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 412,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Orgrimmar -> Tanaris (12372 yds)"
+    },
+    {
+      "fromZoneId": 1637,
+      "toZoneId": 618,
+      "mode": "flight",
+      "seconds": 310,
+      "costCopper": 1020,
+      "faction": "Horde",
+      "note": "Horde Flight Orgrimmar -> Winterspring (9309 yds)"
+    },
+    {
+      "fromZoneId": 1637,
+      "toZoneId": 1638,
+      "mode": "flight",
+      "seconds": 221,
+      "costCopper": 50,
+      "faction": "Horde",
+      "note": "Horde Flight Orgrimmar -> Thunder Bluff (6618 yds)"
+    },
+    {
+      "fromZoneId": 1638,
+      "toZoneId": 15,
+      "mode": "flight",
+      "seconds": 236,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Thunder Bluff -> Dustwallow Marsh (7068 yds)"
+    },
+    {
+      "fromZoneId": 1638,
+      "toZoneId": 16,
+      "mode": "flight",
+      "seconds": 266,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Thunder Bluff -> Azshara (7975 yds)"
+    },
+    {
+      "fromZoneId": 1638,
+      "toZoneId": 17,
+      "mode": "flight",
+      "seconds": 86,
+      "costCopper": 110,
+      "faction": "Horde",
+      "note": "Horde Flight Thunder Bluff -> The Barrens (2567 yds)"
+    },
+    {
+      "fromZoneId": 1638,
+      "toZoneId": 357,
+      "mode": "flight",
+      "seconds": 249,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Thunder Bluff -> Feralas (7475 yds)"
+    },
+    {
+      "fromZoneId": 1638,
+      "toZoneId": 400,
+      "mode": "flight",
+      "seconds": 200,
+      "costCopper": 430,
+      "faction": "Horde",
+      "note": "Horde Flight Thunder Bluff -> Thousand Needles (5996 yds)"
+    },
+    {
+      "fromZoneId": 1638,
+      "toZoneId": 405,
+      "mode": "flight",
+      "seconds": 154,
+      "costCopper": 530,
+      "faction": "Horde",
+      "note": "Horde Flight Thunder Bluff -> Desolace (4606 yds)"
+    },
+    {
+      "fromZoneId": 1638,
+      "toZoneId": 406,
+      "mode": "flight",
+      "seconds": 178,
+      "costCopper": 210,
+      "faction": "Horde",
+      "note": "Horde Flight Thunder Bluff -> Stonetalon Mountains (5339 yds)"
+    },
+    {
+      "fromZoneId": 1638,
+      "toZoneId": 440,
+      "mode": "flight",
+      "seconds": 286,
+      "costCopper": 730,
+      "faction": "Horde",
+      "note": "Horde Flight Thunder Bluff -> Tanaris (8577 yds)"
+    },
+    {
+      "fromZoneId": 1638,
+      "toZoneId": 1637,
+      "mode": "flight",
+      "seconds": 206,
+      "costCopper": 50,
+      "faction": "Horde",
+      "note": "Horde Flight Thunder Bluff -> Orgrimmar (6176 yds)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 3,
+      "mode": "flight",
+      "seconds": 119,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Riverglades -> Badlands (3572 yds)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 8,
+      "mode": "flight",
+      "seconds": 152,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Riverglades -> Swamp of Sorrows (4570 yds)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 38,
+      "mode": "flight",
+      "seconds": 170,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Riverglades -> Loch Modan (5113 yds)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 44,
+      "mode": "flight",
+      "seconds": 129,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Riverglades -> Redridge Mountains (3861 yds)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 45,
+      "mode": "flight",
+      "seconds": 324,
+      "costCopper": 830,
+      "faction": "Horde",
+      "note": "Horde Flight Riverglades -> Arathi Highlands (9732 yds)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 46,
+      "mode": "flight",
+      "seconds": 121,
+      "costCopper": 630,
+      "faction": "Alliance",
+      "note": "Alliance Flight Riverglades -> Burning Steppes (3634 yds)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 46,
+      "mode": "flight",
+      "seconds": 132,
+      "costCopper": 630,
+      "faction": "Horde",
+      "note": "Horde Flight Riverglades -> Burning Steppes (3955 yds)"
+    },
+    {
+      "fromZoneId": 1519,
+      "toZoneId": 1537,
+      "mode": "tram",
+      "seconds": 75,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "Deeprun Tram (Stormwind <-> Ironforge)"
+    },
+    {
+      "fromZoneId": 1537,
+      "toZoneId": 1519,
+      "mode": "tram",
+      "seconds": 75,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "Deeprun Tram (Stormwind <-> Ironforge)"
+    },
+    {
+      "fromZoneId": 11,
+      "toZoneId": 15,
+      "mode": "boat",
+      "seconds": 330,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "Boat: Menethil Harbor <-> Theramore Isle"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 11,
+      "mode": "boat",
+      "seconds": 330,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "Boat: Theramore Isle <-> Menethil Harbor"
+    },
+    {
+      "fromZoneId": 1519,
+      "toZoneId": 148,
+      "mode": "boat",
+      "seconds": 300,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "Boat: Stormwind Harbor <-> Auberdine"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 1519,
+      "mode": "boat",
+      "seconds": 300,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "Boat: Auberdine <-> Stormwind Harbor"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 141,
+      "mode": "boat",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "Boat: Auberdine <-> Rut'theran Village"
+    },
+    {
+      "fromZoneId": 141,
+      "toZoneId": 148,
+      "mode": "boat",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "Boat: Rut'theran Village <-> Auberdine"
+    },
+    {
+      "fromZoneId": 11,
+      "toZoneId": 267,
+      "mode": "boat",
+      "seconds": 220,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "WoW Forever Boat leg: Menethil Harbor -> Southshore"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 148,
+      "mode": "boat",
+      "seconds": 320,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "WoW Forever Boat leg: Southshore -> Auberdine"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 11,
+      "mode": "boat",
+      "seconds": 315,
+      "costCopper": 0,
+      "faction": "Alliance",
+      "note": "WoW Forever Boat leg: Auberdine -> Menethil Harbor"
+    },
+    {
+      "fromZoneId": 33,
+      "toZoneId": 17,
+      "mode": "boat",
+      "seconds": 300,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Boat: Booty Bay <-> Ratchet"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 33,
+      "mode": "boat",
+      "seconds": 300,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Boat: Ratchet <-> Booty Bay"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 16591,
+      "mode": "boat",
+      "seconds": 300,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "WoW Forever Boat: Steamwheedle Port (Tanaris) <-> Powderfuse Port (Riverglades)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 440,
+      "mode": "boat",
+      "seconds": 300,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "WoW Forever Boat: Powderfuse Port (Riverglades) <-> Steamwheedle Port (Tanaris)"
+    },
+    {
+      "fromZoneId": 1637,
+      "toZoneId": 85,
+      "mode": "zeppelin",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Horde",
+      "note": "Zeppelin: Orgrimmar <-> Brill / Undercity (Tirisfal Glades)"
+    },
+    {
+      "fromZoneId": 85,
+      "toZoneId": 1637,
+      "mode": "zeppelin",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Horde",
+      "note": "Zeppelin: Brill / Undercity (Tirisfal Glades) <-> Orgrimmar"
+    },
+    {
+      "fromZoneId": 1637,
+      "toZoneId": 33,
+      "mode": "zeppelin",
+      "seconds": 210,
+      "costCopper": 0,
+      "faction": "Horde",
+      "note": "Zeppelin: Orgrimmar <-> Grom'gol Base Camp (Stranglethorn)"
+    },
+    {
+      "fromZoneId": 33,
+      "toZoneId": 1637,
+      "mode": "zeppelin",
+      "seconds": 210,
+      "costCopper": 0,
+      "faction": "Horde",
+      "note": "Zeppelin: Grom'gol Base Camp (Stranglethorn) <-> Orgrimmar"
+    },
+    {
+      "fromZoneId": 85,
+      "toZoneId": 33,
+      "mode": "zeppelin",
+      "seconds": 210,
+      "costCopper": 0,
+      "faction": "Horde",
+      "note": "Zeppelin: Tirisfal Glades <-> Grom'gol Base Camp (Stranglethorn)"
+    },
+    {
+      "fromZoneId": 33,
+      "toZoneId": 85,
+      "mode": "zeppelin",
+      "seconds": 210,
+      "costCopper": 0,
+      "faction": "Horde",
+      "note": "Zeppelin: Grom'gol Base Camp (Stranglethorn) <-> Tirisfal Glades"
+    },
+    {
+      "fromZoneId": 36,
+      "toZoneId": 16593,
+      "mode": "airship",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "WoW Forever Airship: Alterac Mountains <-> Zephras Isle"
+    },
+    {
+      "fromZoneId": 16593,
+      "toZoneId": 36,
+      "mode": "airship",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "WoW Forever Airship: Zephras Isle <-> Alterac Mountains"
+    },
+    {
+      "fromZoneId": 215,
+      "toZoneId": 16593,
+      "mode": "airship",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "WoW Forever Airship: Mulgore <-> Zephras Isle"
+    },
+    {
+      "fromZoneId": 16593,
+      "toZoneId": 215,
+      "mode": "airship",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "WoW Forever Airship: Zephras Isle <-> Mulgore"
+    },
+    {
+      "fromZoneId": 139,
+      "toZoneId": 28,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Eastern Plaguelands <-> Western Plaguelands"
+    },
+    {
+      "fromZoneId": 28,
+      "toZoneId": 139,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Eastern Plaguelands <-> Western Plaguelands"
+    },
+    {
+      "fromZoneId": 28,
+      "toZoneId": 85,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Western Plaguelands <-> Tirisfal Glades"
+    },
+    {
+      "fromZoneId": 85,
+      "toZoneId": 28,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Western Plaguelands <-> Tirisfal Glades"
+    },
+    {
+      "fromZoneId": 28,
+      "toZoneId": 36,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Western Plaguelands <-> Alterac Mountains (Chillwind)"
+    },
+    {
+      "fromZoneId": 36,
+      "toZoneId": 28,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Western Plaguelands <-> Alterac Mountains (Chillwind)"
+    },
+    {
+      "fromZoneId": 28,
+      "toZoneId": 267,
+      "mode": "run",
+      "seconds": 170,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Western Plaguelands <-> Hillsbrad Foothills (Chillwind/river)"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 28,
+      "mode": "run",
+      "seconds": 170,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Western Plaguelands <-> Hillsbrad Foothills (Chillwind/river)"
+    },
+    {
+      "fromZoneId": 28,
+      "toZoneId": 47,
+      "mode": "run",
+      "seconds": 210,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Western Plaguelands <-> The Hinterlands (Andorhal/Aerie approach)"
+    },
+    {
+      "fromZoneId": 47,
+      "toZoneId": 28,
+      "mode": "run",
+      "seconds": 210,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Western Plaguelands <-> The Hinterlands (Andorhal/Aerie approach)"
+    },
+    {
+      "fromZoneId": 85,
+      "toZoneId": 1497,
+      "mode": "run",
+      "seconds": 45,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Tirisfal Glades <-> Undercity"
+    },
+    {
+      "fromZoneId": 1497,
+      "toZoneId": 85,
+      "mode": "run",
+      "seconds": 45,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Tirisfal Glades <-> Undercity"
+    },
+    {
+      "fromZoneId": 85,
+      "toZoneId": 130,
+      "mode": "run",
+      "seconds": 140,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Tirisfal Glades <-> Silverpine Forest"
+    },
+    {
+      "fromZoneId": 130,
+      "toZoneId": 85,
+      "mode": "run",
+      "seconds": 140,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Tirisfal Glades <-> Silverpine Forest"
+    },
+    {
+      "fromZoneId": 130,
+      "toZoneId": 267,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Silverpine Forest <-> Hillsbrad Foothills"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 130,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Silverpine Forest <-> Hillsbrad Foothills"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 36,
+      "mode": "run",
+      "seconds": 120,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Hillsbrad Foothills <-> Alterac Mountains"
+    },
+    {
+      "fromZoneId": 36,
+      "toZoneId": 267,
+      "mode": "run",
+      "seconds": 120,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Hillsbrad Foothills <-> Alterac Mountains"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 47,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Hillsbrad Foothills <-> The Hinterlands (Durnholde/Ravencrest pass)"
+    },
+    {
+      "fromZoneId": 47,
+      "toZoneId": 267,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Hillsbrad Foothills <-> The Hinterlands (Durnholde/Ravencrest pass)"
+    },
+    {
+      "fromZoneId": 267,
+      "toZoneId": 45,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Hillsbrad Foothills <-> Arathi Highlands"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 267,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Hillsbrad Foothills <-> Arathi Highlands"
+    },
+    {
+      "fromZoneId": 45,
+      "toZoneId": 11,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Arathi Highlands <-> Wetlands (Thandol Span)"
+    },
+    {
+      "fromZoneId": 11,
+      "toZoneId": 45,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Arathi Highlands <-> Wetlands (Thandol Span)"
+    },
+    {
+      "fromZoneId": 11,
+      "toZoneId": 38,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Wetlands <-> Loch Modan (Dun Algaz tunnel)"
+    },
+    {
+      "fromZoneId": 38,
+      "toZoneId": 11,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Wetlands <-> Loch Modan (Dun Algaz tunnel)"
+    },
+    {
+      "fromZoneId": 38,
+      "toZoneId": 1,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Loch Modan <-> Dun Morogh (South Gate Pass)"
+    },
+    {
+      "fromZoneId": 1,
+      "toZoneId": 38,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Loch Modan <-> Dun Morogh (South Gate Pass)"
+    },
+    {
+      "fromZoneId": 1,
+      "toZoneId": 1537,
+      "mode": "run",
+      "seconds": 45,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Dun Morogh <-> Ironforge"
+    },
+    {
+      "fromZoneId": 1537,
+      "toZoneId": 1,
+      "mode": "run",
+      "seconds": 45,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Dun Morogh <-> Ironforge"
+    },
+    {
+      "fromZoneId": 38,
+      "toZoneId": 3,
+      "mode": "run",
+      "seconds": 120,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Loch Modan <-> Badlands (southern border pass)"
+    },
+    {
+      "fromZoneId": 3,
+      "toZoneId": 38,
+      "mode": "run",
+      "seconds": 120,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Loch Modan <-> Badlands (southern border pass)"
+    },
+    {
+      "fromZoneId": 38,
+      "toZoneId": 51,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Loch Modan <-> Searing Gorge (locked Dark Iron gate / Stonewrought route)"
+    },
+    {
+      "fromZoneId": 51,
+      "toZoneId": 38,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Loch Modan <-> Searing Gorge (locked Dark Iron gate / Stonewrought route)"
+    },
+    {
+      "fromZoneId": 3,
+      "toZoneId": 51,
+      "mode": "run",
+      "seconds": 130,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Badlands <-> Searing Gorge"
+    },
+    {
+      "fromZoneId": 51,
+      "toZoneId": 3,
+      "mode": "run",
+      "seconds": 130,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Badlands <-> Searing Gorge"
+    },
+    {
+      "fromZoneId": 3,
+      "toZoneId": 16591,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Badlands <-> Riverglades (northern pass)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 3,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Badlands <-> Riverglades (northern pass)"
+    },
+    {
+      "fromZoneId": 51,
+      "toZoneId": 46,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Searing Gorge <-> Burning Steppes (Blackrock Mountain corridor)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 51,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Searing Gorge <-> Burning Steppes (Blackrock Mountain corridor)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 44,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Burning Steppes <-> Redridge Mountains (Blackrock Pass)"
+    },
+    {
+      "fromZoneId": 44,
+      "toZoneId": 46,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Burning Steppes <-> Redridge Mountains (Blackrock Pass)"
+    },
+    {
+      "fromZoneId": 46,
+      "toZoneId": 16591,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Burning Steppes <-> Riverglades (eastern pass)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 46,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Burning Steppes <-> Riverglades (eastern pass)"
+    },
+    {
+      "fromZoneId": 44,
+      "toZoneId": 16591,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Redridge Mountains <-> Riverglades (eastern fork)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 44,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Redridge Mountains <-> Riverglades (eastern fork)"
+    },
+    {
+      "fromZoneId": 44,
+      "toZoneId": 12,
+      "mode": "run",
+      "seconds": 130,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Redridge Mountains <-> Elwynn Forest"
+    },
+    {
+      "fromZoneId": 12,
+      "toZoneId": 44,
+      "mode": "run",
+      "seconds": 130,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Redridge Mountains <-> Elwynn Forest"
+    },
+    {
+      "fromZoneId": 44,
+      "toZoneId": 10,
+      "mode": "run",
+      "seconds": 120,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Redridge Mountains <-> Duskwood"
+    },
+    {
+      "fromZoneId": 10,
+      "toZoneId": 44,
+      "mode": "run",
+      "seconds": 120,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Redridge Mountains <-> Duskwood"
+    },
+    {
+      "fromZoneId": 12,
+      "toZoneId": 1519,
+      "mode": "run",
+      "seconds": 45,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Elwynn Forest <-> Stormwind City"
+    },
+    {
+      "fromZoneId": 1519,
+      "toZoneId": 12,
+      "mode": "run",
+      "seconds": 45,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Elwynn Forest <-> Stormwind City"
+    },
+    {
+      "fromZoneId": 12,
+      "toZoneId": 40,
+      "mode": "run",
+      "seconds": 130,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Elwynn Forest <-> Westfall"
+    },
+    {
+      "fromZoneId": 40,
+      "toZoneId": 12,
+      "mode": "run",
+      "seconds": 130,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Elwynn Forest <-> Westfall"
+    },
+    {
+      "fromZoneId": 12,
+      "toZoneId": 10,
+      "mode": "run",
+      "seconds": 120,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Elwynn Forest <-> Duskwood"
+    },
+    {
+      "fromZoneId": 10,
+      "toZoneId": 12,
+      "mode": "run",
+      "seconds": 120,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Elwynn Forest <-> Duskwood"
+    },
+    {
+      "fromZoneId": 40,
+      "toZoneId": 10,
+      "mode": "run",
+      "seconds": 110,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Westfall <-> Duskwood"
+    },
+    {
+      "fromZoneId": 10,
+      "toZoneId": 40,
+      "mode": "run",
+      "seconds": 110,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Westfall <-> Duskwood"
+    },
+    {
+      "fromZoneId": 10,
+      "toZoneId": 33,
+      "mode": "run",
+      "seconds": 140,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Duskwood <-> Stranglethorn Vale"
+    },
+    {
+      "fromZoneId": 33,
+      "toZoneId": 10,
+      "mode": "run",
+      "seconds": 140,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Duskwood <-> Stranglethorn Vale"
+    },
+    {
+      "fromZoneId": 10,
+      "toZoneId": 41,
+      "mode": "run",
+      "seconds": 110,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Duskwood <-> Deadwind Pass"
+    },
+    {
+      "fromZoneId": 41,
+      "toZoneId": 10,
+      "mode": "run",
+      "seconds": 110,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Duskwood <-> Deadwind Pass"
+    },
+    {
+      "fromZoneId": 41,
+      "toZoneId": 8,
+      "mode": "run",
+      "seconds": 100,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Deadwind Pass <-> Swamp of Sorrows"
+    },
+    {
+      "fromZoneId": 8,
+      "toZoneId": 41,
+      "mode": "run",
+      "seconds": 100,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Deadwind Pass <-> Swamp of Sorrows"
+    },
+    {
+      "fromZoneId": 8,
+      "toZoneId": 4,
+      "mode": "run",
+      "seconds": 110,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Swamp of Sorrows <-> Blasted Lands"
+    },
+    {
+      "fromZoneId": 4,
+      "toZoneId": 8,
+      "mode": "run",
+      "seconds": 110,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Swamp of Sorrows <-> Blasted Lands"
+    },
+    {
+      "fromZoneId": 8,
+      "toZoneId": 16591,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Swamp of Sorrows <-> Riverglades (northeast coast)"
+    },
+    {
+      "fromZoneId": 16591,
+      "toZoneId": 8,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Swamp of Sorrows <-> Riverglades (northeast coast)"
+    },
+    {
+      "fromZoneId": 141,
+      "toZoneId": 1657,
+      "mode": "run",
+      "seconds": 45,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Teldrassil <-> Darnassus"
+    },
+    {
+      "fromZoneId": 1657,
+      "toZoneId": 141,
+      "mode": "run",
+      "seconds": 45,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Teldrassil <-> Darnassus"
+    },
+    {
+      "fromZoneId": 148,
+      "toZoneId": 331,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Darkshore <-> Ashenvale"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 148,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Darkshore <-> Ashenvale"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 361,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Ashenvale <-> Felwood"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 331,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Ashenvale <-> Felwood"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 16,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Ashenvale <-> Azshara"
+    },
+    {
+      "fromZoneId": 16,
+      "toZoneId": 331,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Ashenvale <-> Azshara"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 406,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Ashenvale <-> Stonetalon Mountains (Talondeep)"
+    },
+    {
+      "fromZoneId": 406,
+      "toZoneId": 331,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Ashenvale <-> Stonetalon Mountains (Talondeep)"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 17,
+      "mode": "run",
+      "seconds": 170,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Ashenvale <-> The Barrens"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 331,
+      "mode": "run",
+      "seconds": 170,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Ashenvale <-> The Barrens"
+    },
+    {
+      "fromZoneId": 331,
+      "toZoneId": 616,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Ashenvale <-> Mount Hyjal (Nordrassil northern trail)"
+    },
+    {
+      "fromZoneId": 616,
+      "toZoneId": 331,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Ashenvale <-> Mount Hyjal (Nordrassil northern trail)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 493,
+      "mode": "run",
+      "seconds": 140,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Felwood <-> Moonglade (Timbermaw Hold)"
+    },
+    {
+      "fromZoneId": 493,
+      "toZoneId": 361,
+      "mode": "run",
+      "seconds": 140,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Felwood <-> Moonglade (Timbermaw Hold)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 618,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Felwood <-> Winterspring (Timbermaw Hold)"
+    },
+    {
+      "fromZoneId": 618,
+      "toZoneId": 361,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Felwood <-> Winterspring (Timbermaw Hold)"
+    },
+    {
+      "fromZoneId": 361,
+      "toZoneId": 616,
+      "mode": "run",
+      "seconds": 170,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Felwood <-> Mount Hyjal (Whisperwind / Timbermaw)"
+    },
+    {
+      "fromZoneId": 616,
+      "toZoneId": 361,
+      "mode": "run",
+      "seconds": 170,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Felwood <-> Mount Hyjal (Whisperwind / Timbermaw)"
+    },
+    {
+      "fromZoneId": 618,
+      "toZoneId": 616,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Winterspring <-> Mount Hyjal (Darkwhisper Gorge)"
+    },
+    {
+      "fromZoneId": 616,
+      "toZoneId": 618,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Winterspring <-> Mount Hyjal (Darkwhisper Gorge)"
+    },
+    {
+      "fromZoneId": 406,
+      "toZoneId": 405,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Stonetalon Mountains <-> Desolace"
+    },
+    {
+      "fromZoneId": 405,
+      "toZoneId": 406,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Stonetalon Mountains <-> Desolace"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 406,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "The Barrens <-> Stonetalon Mountains"
+    },
+    {
+      "fromZoneId": 406,
+      "toZoneId": 17,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "The Barrens <-> Stonetalon Mountains"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 14,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "The Barrens <-> Durotar"
+    },
+    {
+      "fromZoneId": 14,
+      "toZoneId": 17,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "The Barrens <-> Durotar"
+    },
+    {
+      "fromZoneId": 14,
+      "toZoneId": 1637,
+      "mode": "run",
+      "seconds": 45,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Durotar <-> Orgrimmar"
+    },
+    {
+      "fromZoneId": 1637,
+      "toZoneId": 14,
+      "mode": "run",
+      "seconds": 45,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Durotar <-> Orgrimmar"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 215,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "The Barrens <-> Mulgore"
+    },
+    {
+      "fromZoneId": 215,
+      "toZoneId": 17,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "The Barrens <-> Mulgore"
+    },
+    {
+      "fromZoneId": 215,
+      "toZoneId": 1638,
+      "mode": "run",
+      "seconds": 60,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Mulgore <-> Thunder Bluff"
+    },
+    {
+      "fromZoneId": 1638,
+      "toZoneId": 215,
+      "mode": "run",
+      "seconds": 60,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Mulgore <-> Thunder Bluff"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 15,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "The Barrens <-> Dustwallow Marsh"
+    },
+    {
+      "fromZoneId": 15,
+      "toZoneId": 17,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "The Barrens <-> Dustwallow Marsh"
+    },
+    {
+      "fromZoneId": 17,
+      "toZoneId": 400,
+      "mode": "run",
+      "seconds": 170,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "The Barrens <-> Thousand Needles (Great Lift)"
+    },
+    {
+      "fromZoneId": 400,
+      "toZoneId": 17,
+      "mode": "run",
+      "seconds": 170,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "The Barrens <-> Thousand Needles (Great Lift)"
+    },
+    {
+      "fromZoneId": 405,
+      "toZoneId": 16651,
+      "mode": "run",
+      "seconds": 140,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Desolace <-> Shen'dralas (Valley of Bones)"
+    },
+    {
+      "fromZoneId": 16651,
+      "toZoneId": 405,
+      "mode": "run",
+      "seconds": 140,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Desolace <-> Shen'dralas (Valley of Bones)"
+    },
+    {
+      "fromZoneId": 405,
+      "toZoneId": 357,
+      "mode": "run",
+      "seconds": 170,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Desolace <-> Feralas"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 405,
+      "mode": "run",
+      "seconds": 170,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Desolace <-> Feralas"
+    },
+    {
+      "fromZoneId": 16651,
+      "toZoneId": 357,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Shen'dralas <-> Feralas"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 16651,
+      "mode": "run",
+      "seconds": 160,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Shen'dralas <-> Feralas"
+    },
+    {
+      "fromZoneId": 357,
+      "toZoneId": 400,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Feralas <-> Thousand Needles (Thalanaar)"
+    },
+    {
+      "fromZoneId": 400,
+      "toZoneId": 357,
+      "mode": "run",
+      "seconds": 180,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Feralas <-> Thousand Needles (Thalanaar)"
+    },
+    {
+      "fromZoneId": 400,
+      "toZoneId": 440,
+      "mode": "run",
+      "seconds": 140,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Thousand Needles <-> Tanaris (Shimmering Flats south ramp)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 400,
+      "mode": "run",
+      "seconds": 140,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Thousand Needles <-> Tanaris (Shimmering Flats south ramp)"
+    },
+    {
+      "fromZoneId": 440,
+      "toZoneId": 490,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Tanaris <-> Un'Goro Crater (west ramp)"
+    },
+    {
+      "fromZoneId": 490,
+      "toZoneId": 440,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Tanaris <-> Un'Goro Crater (west ramp)"
+    },
+    {
+      "fromZoneId": 490,
+      "toZoneId": 1377,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Un'Goro Crater <-> Silithus (northwest ramp)"
+    },
+    {
+      "fromZoneId": 1377,
+      "toZoneId": 490,
+      "mode": "run",
+      "seconds": 150,
+      "costCopper": 0,
+      "faction": "Both",
+      "note": "Un'Goro Crater <-> Silithus (northwest ramp)"
+    }
+  ]
+}
