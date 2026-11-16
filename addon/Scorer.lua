@@ -4,11 +4,14 @@
 --   1. Multi-objective dynamic quest re-scorer (XP, Travel, Dungeon Unlocks,
 --      Gold/Bags/Class BiS Gear, and Skinning/Leatherworking) prioritizing
 --      in-window dungeons, local-zone momentum (including boosted same-hub /
---      on-path same-zone ACCEPT quests within ~25 yds), proactive
---      virtual-completion full-chain expansion and chain progress annotations,
---      recent/friend chain follow-ups, travel-aware ready turn-ins, hub-batched
---      turn-ins, and opposing-faction zone penalties, plus priority class
---      quests, unlock chains, and rewards.
+--      on-path same-zone ACCEPT quests within ~25 yds), cross-zone and
+--      cross-continent cohesion, single-use virtual Hearthstone lookahead
+--      (with cross-continent ACCEPT/COMPLETE disfavoring Hearthstone),
+--      zone-transition lookahead frontier parity, walking target & queue
+--      sticky hysteresis, proactive virtual-completion full-chain expansion
+--      and chain progress annotations, recent/friend chain follow-ups,
+--      travel-aware ready turn-ins, hub-batched turn-ins, and opposing-faction
+--      zone penalties, plus priority class quests, unlock chains, and rewards.
 --   2. Consumes embedded GeneratedData (quests, dungeons, zones, xpCurve,
 --      classScores, indexes) plus live/overridden character state, user
 --      slider weights/toggles, QuestieDB turn-in fallbacks via State, and
@@ -54,6 +57,16 @@ local READY_CROSS_ZONE_BASE_BONUS = 6
 local READY_CROSS_ZONE_DETOUR_PENALTY = 10
 local READY_HUB_CLUSTER_STEP_BONUS = 4
 local READY_FOLLOWUP_BONUS = 6
+local CROSS_ZONE_WORK_PENALTY = 10
+local CROSS_CONTINENT_WORK_PENALTY = 16
+local DYNAMIC_PRIMARY_STICKY_BONUS = 6.0
+local DYNAMIC_QUEUE_STICKY_MAX = 3.0
+local DYNAMIC_QUEUE_STICKY_STEP = 0.25
+local ACTION_STICKY_CODE = {
+    TURN_IN = 1,
+    COMPLETE = 2,
+    ACCEPT = 3,
+}
 local CLASS_FILE_TO_BIT = {
     WARRIOR = 1,
     PALADIN = 2,
@@ -67,7 +80,11 @@ local CLASS_FILE_TO_BIT = {
 }
 
 local LIVE_NAV_OPTS = { maxResults = 75, maxSec = 2400.0, keepFullField = true }
-local LOOKAHEAD_NAV_OPTS = { maxResults = 36, maxSec = 1800.0, keepFullField = false, skipIndexRebuild = true }
+local LIVE_NAV_OPTS_NO_HEARTH = { maxResults = 75, maxSec = 2400.0, keepFullField = true, allowHearth = false }
+local LOOKAHEAD_NAV_OPTS = { maxResults = 40, maxSec = 1800.0, keepFullField = false, skipIndexRebuild = true }
+local LOOKAHEAD_NAV_OPTS_NO_HEARTH = { maxResults = 40, maxSec = 1800.0, keepFullField = false, allowHearth = false, skipIndexRebuild = true }
+local LOOKAHEAD_NEW_ZONE_OPTS = { maxResults = 75, maxSec = 2400.0, keepFullField = true, skipIndexRebuild = true }
+local LOOKAHEAD_NEW_ZONE_OPTS_NO_HEARTH = { maxResults = 75, maxSec = 2400.0, keepFullField = true, allowHearth = false, skipIndexRebuild = true }
 local FAST_BLOCK_OPTS = { consultQuestie = false, checkIsDoable = false, useBulkCompletion = true, reasonless = true }
 local LIVE_BLOCK_OPTS = { consultQuestie = true, checkIsDoable = true, useBulkCompletion = true, reasonless = true }
 local UNMOUNTED_NAV_OPTS = { unmountedOnly = true }
@@ -83,12 +100,23 @@ local rankLiveCache = {
     key = nil,
     out = nil,
     seedQids = nil,
+    seedZoneId = nil,
 }
 local dynamicStepsCache = {
     valid = false,
     key = nil,
+    postKey = nil,
     steps = nil,
     requestedCount = 0,
+}
+local lastDynamicCommit = {
+    valid = false,
+    stateSig = nil,
+    primaryQid = nil,
+    primaryAction = nil,
+    queueRank = {},
+    stepQids = {},
+    stepActs = {},
 }
 local scorerScratch = {
     metricsPool = {},
@@ -259,10 +287,19 @@ function Scorer.InvalidateCaches(clearStatic)
     rankLiveCache.key = nil
     rankLiveCache.out = nil
     rankLiveCache.seedQids = nil
+    rankLiveCache.seedZoneId = nil
     dynamicStepsCache.valid = false
     dynamicStepsCache.key = nil
+    dynamicStepsCache.postKey = nil
     dynamicStepsCache.steps = nil
     dynamicStepsCache.requestedCount = 0
+    lastDynamicCommit.valid = false
+    lastDynamicCommit.stateSig = nil
+    lastDynamicCommit.primaryQid = nil
+    lastDynamicCommit.primaryAction = nil
+    for k in pairs(lastDynamicCommit.queueRank) do
+        lastDynamicCommit.queueRank[k] = nil
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -467,10 +504,19 @@ local function ComputeCandidateMetrics(q, action, vState, weights, toggles, data
     local targetX = (pt and pt.x) or 50
     local targetY = (pt and pt.y) or 50
 
+    local rFrom = vState.zoneId and data.zones and data.zones[vState.zoneId] and data.zones[vState.zoneId].region
+    local rTo = targetZoneId and data.zones and data.zones[targetZoneId] and data.zones[targetZoneId].region
+    local isCrossContinent = (rFrom ~= nil and rTo ~= nil and rFrom ~= rTo) and true or false
+
     if not Scorer._navStepOpts then Scorer._navStepOpts = {} end
     local navOpts = Scorer._navStepOpts
     navOpts.questId = q.id
     navOpts.role = (action == "TURN_IN" and "t") or (action == "COMPLETE" and "o") or "s"
+    if (vState.hearthAvailable == false) or (isCrossContinent and action ~= "TURN_IN") then
+        navOpts.allowHearth = false
+    else
+        navOpts.allowHearth = nil
+    end
     local travelMins = Scorer.EstimateTravelMinutes(
         vState.zoneId, vState.x, vState.y,
         targetZoneId, targetX, targetY, data, vState.player, navOpts
@@ -554,7 +600,13 @@ local function ComputeCandidateMetrics(q, action, vState, weights, toggles, data
             hasFollowup = true
         end
     elseif action == "COMPLETE" then
-        momentum = 18
+        if targetZoneId == vState.zoneId then
+            momentum = 18
+        elseif not isCrossContinent then
+            momentum = 12
+        else
+            momentum = 8
+        end
     elseif targetZoneId == vState.zoneId then
         if action == "ACCEPT" and (not q.turnin or not q.turnin.zoneId or q.turnin.zoneId == vState.zoneId) and travelMins <= 0.08 then
             momentum = 16
@@ -629,6 +681,9 @@ local function ComputeCandidateMetrics(q, action, vState, weights, toggles, data
     out.isLW = isLW
     out.isSkin = isSkin
     out.skinningNorm = skinningNorm
+    out.travelMins = travelMins
+    out.targetRegion = rTo
+    out.isCrossContinent = isCrossContinent
     out.readyPeerCount = readyPeerCount
     out.hasFollowup = hasFollowup
     out.isFriendChain = isFriendChain
@@ -830,9 +885,15 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             rankSkipElite and 1 or 0,
             rankSkipDungeons and 1 or 0
         ) .. "|" .. readySig .. "|" .. locSig
+        local hAvail = (vState.hearthAvailable == false) and 0 or 1
+        local stickySig = (vState.useStickyCommit and lastDynamicCommit.valid)
+            and (tostring(lastDynamicCommit.primaryQid or 0) .. ":" .. tostring(lastDynamicCommit.primaryAction or ""))
+            or "0"
+        rankLiveKey = rankLiveKey .. "|" .. tostring(hAvail) .. "|" .. stickySig
         if rankLiveCache.valid and rankLiveCache.key == rankLiveKey and rankLiveCache.out then
             if vState and rankLiveCache.seedQids then
                 vState.seedQids = rankLiveCache.seedQids
+                vState.seedZoneId = rankLiveCache.seedZoneId
             end
             return rankLiveCache.out
         end
@@ -1022,7 +1083,9 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
     readyCtx.recentChainSet = recentChainSet
     readyCtx.simChainSet = simChainSet
     readyCtx.activeChainSet = activeChainSet
+    local rFromZone = vState.zoneId and data.zones and data.zones[vState.zoneId] and data.zones[vState.zoneId].region
     local hasLocalSameZoneWork = false
+    local hasSameContinentWork = false
 
     local function EvaluateAndPush(q, action)
         local slotIdx = candCount + 1
@@ -1044,6 +1107,9 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             rawCandidates[candCount] = m
             if (action == "ACCEPT" or action == "COMPLETE") and vState.zoneId and m.targetZoneId == vState.zoneId then
                 hasLocalSameZoneWork = true
+            end
+            if rFromZone ~= nil and m.targetRegion == rFromZone then
+                hasSameContinentWork = true
             end
         end
     end
@@ -1134,7 +1200,18 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
     local isLookahead = ((vState.stepCounter or 1) > 1)
     if navAvail and vState.zoneId and vState.x and vState.y and data.quests then
         local navPlayer = isLookahead and (vState.player or vPlayer) or vPlayer
-        local navOpts = isLookahead and LOOKAHEAD_NAV_OPTS or LIVE_NAV_OPTS
+        local noHearth = (vState.hearthAvailable == false)
+        local zoneChanged = isLookahead and (vState.seedZoneId ~= nil and vState.zoneId ~= vState.seedZoneId) or false
+        local navOpts
+        if isLookahead then
+            if zoneChanged then
+                navOpts = noHearth and LOOKAHEAD_NEW_ZONE_OPTS_NO_HEARTH or LOOKAHEAD_NEW_ZONE_OPTS
+            else
+                navOpts = noHearth and LOOKAHEAD_NAV_OPTS_NO_HEARTH or LOOKAHEAD_NAV_OPTS
+            end
+        else
+            navOpts = noHearth and LIVE_NAV_OPTS_NO_HEARTH or LIVE_NAV_OPTS
+        end
         local pool, poolCount = ns.Nav.FindNearestEligibleQuests(vState.zoneId, vState.x, vState.y, data, navPlayer, navOpts)
         local seenCand = scorerScratch.seenCand
         local seenList = scorerScratch.seenList
@@ -1167,7 +1244,7 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             for i = 1, #seeds do
                 EvalOnce(seeds[i])
             end
-            if vState.player and vState.level ~= vState.player.level then
+            if zoneChanged or (vState.player and vState.level ~= vState.player.level) then
                 local priorityList = ns.Nav.GetPriorityAndUnanchoredQids()
                 for i = 1, #(priorityList or {}) do
                     EvalOnce(priorityList[i])
@@ -1195,6 +1272,24 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             seenCand[seenList[i]] = nil
             seenList[i] = nil
         end
+        if zoneChanged then
+            local newSeeds = {}
+            local seenNew = {}
+            for i = 1, (poolCount or 0) do
+                local rec = pool[i]
+                local pqid = rec and rec.qid
+                local pq = pqid and data.quests[pqid]
+                if pq and not pq.isSyntheticReady and not seenNew[pqid] then
+                    seenNew[pqid] = true
+                    newSeeds[#newSeeds + 1] = pqid
+                    if #newSeeds >= 36 then
+                        break
+                    end
+                end
+            end
+            vState.seedQids = newSeeds
+            vState.seedZoneId = vState.zoneId
+        end
     else
         for qid, q in pairs(data.quests or {}) do
             TryEvaluateQuestId(qid, q)
@@ -1205,11 +1300,62 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
         EvaluateAndPush(eq, "TURN_IN")
     end
 
-    if hasLocalSameZoneWork and vState.zoneId then
+    if candCount > 0 then
+        local stepNum = vState.stepCounter or 1
+        local applySticky = (vState.useStickyCommit == true) and lastDynamicCommit.valid
+        local hasPointBlankLocal = false
+        if applySticky and stepNum == 1 and vState.zoneId then
+            for i = 1, candCount do
+                local c = rawCandidates[i]
+                if c.targetZoneId == vState.zoneId
+                    and (c.rawAction == "ACCEPT" or c.rawAction == "TURN_IN")
+                    and (c.travelMins or 99) <= 0.12
+                then
+                    hasPointBlankLocal = true
+                    break
+                end
+            end
+        end
+
+        local commitQid = lastDynamicCommit.primaryQid
+        local commitAct = lastDynamicCommit.primaryAction
+        local queueRank = lastDynamicCommit.queueRank
         for i = 1, candCount do
             local m = rawCandidates[i]
-            if m.rawAction == "TURN_IN" and m.targetZoneId and m.targetZoneId ~= vState.zoneId then
-                m.score = m.score - READY_CROSS_ZONE_DETOUR_PENALTY
+            if hasSameContinentWork and m.isCrossContinent then
+                if m.rawAction == "TURN_IN" then
+                    m.score = m.score - 8
+                else
+                    m.score = m.score - CROSS_CONTINENT_WORK_PENALTY
+                end
+            elseif hasLocalSameZoneWork and vState.zoneId and m.targetZoneId and m.targetZoneId ~= vState.zoneId then
+                if m.rawAction == "TURN_IN" then
+                    m.score = m.score - READY_CROSS_ZONE_DETOUR_PENALTY
+                else
+                    m.score = m.score - CROSS_ZONE_WORK_PENALTY
+                end
+            end
+
+            if applySticky then
+                local mqid = m.quest and m.quest.id
+                local isLocalPointBlank = (vState.zoneId ~= nil)
+                    and (m.targetZoneId == vState.zoneId)
+                    and (m.rawAction == "ACCEPT" or m.rawAction == "TURN_IN")
+                    and ((m.travelMins or 99) <= 0.12)
+                if stepNum == 1 and mqid and mqid == commitQid and m.rawAction == commitAct then
+                    if not hasPointBlankLocal or isLocalPointBlank then
+                        m.score = m.score + DYNAMIC_PRIMARY_STICKY_BONUS
+                    end
+                elseif queueRank and (stepNum > 1 or not hasPointBlankLocal or isLocalPointBlank) then
+                    local stickyCode = (mqid or 0) * 8 + (ACTION_STICKY_CODE[m.rawAction] or 0)
+                    local prevRank = queueRank[stickyCode]
+                    if prevRank then
+                        local qBonus = DYNAMIC_QUEUE_STICKY_MAX - (prevRank - 1) * DYNAMIC_QUEUE_STICKY_STEP
+                        if qBonus > 0 then
+                            m.score = m.score + qBonus
+                        end
+                    end
+                end
             end
         end
     end
@@ -1253,6 +1399,7 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
                 end
                 if vState then
                     vState.seedQids = seedQids
+                    vState.seedZoneId = vState.zoneId
                 end
             end
 
@@ -1297,6 +1444,7 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
         seedQids = {}
         if vState then
             vState.seedQids = seedQids
+            vState.seedZoneId = vState.zoneId
         end
     end
 
@@ -1305,6 +1453,7 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
         rankLiveCache.key = rankLiveKey
         rankLiveCache.out = out
         rankLiveCache.seedQids = seedQids
+        rankLiveCache.seedZoneId = vState and vState.zoneId
     end
 
     return out
@@ -1333,17 +1482,14 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
     local skipEliteNow = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(player, toggles) or (toggles.skipEliteSolo ~= false and not (player and player.inGroup))
     local skipDungeonsNow = (ns.State and ns.State.ShouldSkipDungeonsNow) and ns.State.ShouldSkipDungeonsNow(toggles) or (toggles.skipDungeons ~= false)
 
-    local dynKey = string.format(
-        "%d:%d:%d:%d:%d:%s:%s:%s:%s:%s:%s:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d:%d",
+    local commitStateSig = string.format(
+        "%d:%d:%d:%d:%s:%s:%s:%s:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d:%d",
         gen, sGen,
         tonumber(player and player.level) or 24,
-        tonumber(player and player.xpPct) or 0,
         maxOffset,
         tostring(player and player.inInstance == true),
         tostring(player and player.activeDungeonId or ""),
-        tostring(player and player.zoneId or 0),
-        tostring(player and player.x or -1),
-        tostring(player and player.y or -1),
+        tostring(player and player.inGroup == true),
         tostring(player and player.isDead == true),
         tonumber(weights.xp) or 45,
         tonumber(weights.travel) or 25,
@@ -1367,9 +1513,28 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
         hReady,
         hasQdb,
         blkCount
-    ) .. "|" .. readySig .. "|" .. locSig
+    ) .. "|" .. readySig
 
-    if dynamicStepsCache.valid and dynamicStepsCache.key == dynKey and dynamicStepsCache.steps and dynamicStepsCache.requestedCount >= count then
+    local locPart = string.format(
+        "%d:%s:%s:%s",
+        tonumber(player and player.xpPct) or 0,
+        tostring(player and player.zoneId or 0),
+        tostring(player and player.x or -1),
+        tostring(player and player.y or -1)
+    ) .. "|" .. locSig
+
+    local useStickyCommit = (lastDynamicCommit.valid and lastDynamicCommit.stateSig == commitStateSig) and true or false
+    local preStickySig = useStickyCommit
+        and (tostring(lastDynamicCommit.primaryQid or 0) .. ":" .. tostring(lastDynamicCommit.primaryAction or ""))
+        or "none"
+    local baseDynKey = commitStateSig .. "|" .. locPart
+    local dynKey = baseDynKey .. "|" .. preStickySig
+
+    if dynamicStepsCache.valid
+        and (dynamicStepsCache.key == dynKey or dynamicStepsCache.postKey == dynKey)
+        and dynamicStepsCache.steps
+        and dynamicStepsCache.requestedCount >= count
+    then
         if count == dynamicStepsCache.requestedCount then
             return dynamicStepsCache.steps
         end
@@ -1439,10 +1604,16 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
         isLiveState = true,
         maxCandidates = 1,
         fromLiveSeed = true,
+        hearthAvailable = (hReady == 1),
+        useStickyCommit = useStickyCommit,
+        seedZoneId = nil,
     }
 
     local steps = {}
     local startStep = 1
+    local commitCount = 0
+    local cQids = lastDynamicCommit.stepQids
+    local cActs = lastDynamicCommit.stepActs
     if player and player.inInstance == true and ns.State and ns.State.GetActiveDungeonPlan then
         local dPlan = ns.State.GetActiveDungeonPlan(player, toggles)
         if dPlan and type(dPlan.steps) == "table" and #dPlan.steps > 0 then
@@ -1453,6 +1624,9 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
                 steps[#steps + 1] = decDst
                 local dQid = dst.questId
                 local dAct = dst.action
+                commitCount = commitCount + 1
+                cQids[commitCount] = dQid
+                cActs[commitCount] = dAct
                 if dQid then
                     if dAct == "ACCEPT" then
                         local dq = data.quests and data.quests[dQid]
@@ -1489,6 +1663,33 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
         -- Advance virtual simulation state for next lookahead step
         local qid = pick.quest.id
         local prevZoneId = vState.zoneId
+        commitCount = commitCount + 1
+        cQids[commitCount] = qid
+        cActs[commitCount] = pick.rawAction
+
+        if vState.hearthAvailable and vState.zoneId and pick.step.zoneId and ns.Nav and ns.Nav.QueryPath then
+            Scorer._hearthCheckOpts = Scorer._hearthCheckOpts or {}
+            local hOpts = Scorer._hearthCheckOpts
+            hOpts.questId = qid
+            hOpts.role = (pick.rawAction == "TURN_IN" and "t") or (pick.rawAction == "COMPLETE" and "o") or "s"
+            local rFromStep = data.zones and vState.zoneId and data.zones[vState.zoneId] and data.zones[vState.zoneId].region
+            local rToStep = data.zones and pick.step.zoneId and data.zones[pick.step.zoneId] and data.zones[pick.step.zoneId].region
+            local stepCrossCont = (rFromStep ~= nil and rToStep ~= nil and rFromStep ~= rToStep)
+            if stepCrossCont and pick.rawAction ~= "TURN_IN" then
+                hOpts.allowHearth = false
+            else
+                hOpts.allowHearth = nil
+            end
+            local pathRes = ns.Nav.QueryPath(
+                vState.zoneId, vState.x, vState.y,
+                pick.step.zoneId, pick.step.x or 50, pick.step.y or 50,
+                vState.player, hOpts
+            )
+            if pathRes and pathRes.usedHearth then
+                vState.hearthAvailable = false
+            end
+        end
+
         vState.zoneId = pick.step.zoneId or vState.zoneId
         vState.zoneName = pick.step.zoneName or vState.zoneName
         vState.x = pick.step.x or vState.x
@@ -1531,8 +1732,44 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
         end
     end
 
+    local firstQid = commitCount >= 1 and cQids[1] or nil
+    local firstAct = commitCount >= 1 and cActs[1] or nil
+    local qRank = lastDynamicCommit.queueRank
+    for k in pairs(qRank) do
+        qRank[k] = nil
+    end
+    if commitCount > 0 and firstQid and firstAct then
+        for idx = 1, commitCount do
+            local sqid = cQids[idx]
+            local sact = cActs[idx]
+            if sqid and sact then
+                local scode = sqid * 8 + (ACTION_STICKY_CODE[sact] or 0)
+                if not qRank[scode] then
+                    qRank[scode] = idx
+                end
+            end
+        end
+        lastDynamicCommit.valid = true
+        lastDynamicCommit.stateSig = commitStateSig
+        lastDynamicCommit.primaryQid = firstQid
+        lastDynamicCommit.primaryAction = firstAct
+    else
+        lastDynamicCommit.valid = false
+        lastDynamicCommit.stateSig = nil
+        lastDynamicCommit.primaryQid = nil
+        lastDynamicCommit.primaryAction = nil
+    end
+    for idx = commitCount + 1, #cQids do
+        cQids[idx] = nil
+        cActs[idx] = nil
+    end
+    local postStickySig = lastDynamicCommit.valid
+        and (tostring(lastDynamicCommit.primaryQid or 0) .. ":" .. tostring(lastDynamicCommit.primaryAction or ""))
+        or "none"
+
     dynamicStepsCache.valid = true
     dynamicStepsCache.key = dynKey
+    dynamicStepsCache.postKey = baseDynKey .. "|" .. postStickySig
     dynamicStepsCache.steps = steps
     dynamicStepsCache.requestedCount = count
 

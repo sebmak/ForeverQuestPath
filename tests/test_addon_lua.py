@@ -3509,7 +3509,7 @@ Mock.FireEvent("ADDON_LOADED", addonName)
 Mock.FireEvent("PLAYER_LOGIN")
 Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
 
-assert(ns.version == "1.5.0", "Expected ns.version == 1.5.0, got " .. tostring(ns.version))
+assert(ns.version == "1.6.0", "Expected ns.version == 1.6.0, got " .. tostring(ns.version))
 assert(type(ns.QuestInfo) == "table", "Expected ns.QuestInfo module to be loaded")
 
 ns.HUD.SetShown(true)
@@ -4515,6 +4515,373 @@ print("IN_DUNGEON_QUEST_SUGGESTIONS_OK")
         rc, out, err = _run_luajit(lua_script)
         self.assertEqual(rc, 0, f"In-dungeon quest suggestions test failed:\nSTDOUT: {out}\nSTDERR: {err}")
         self.assertIn("IN_DUNGEON_QUEST_SUGGESTIONS_OK", out)
+
+    def test_dynamic_and_route_anti_shuffling_stability(self) -> None:
+        lua_script = f"""
+local Mock = dofile({str(WOW_MOCK_LUA)!r})
+Mock.Reset()
+
+-- Part A: Real GeneratedData Stonetalon/Kalimdor vs Ironforge stability (skinning_lw + dynamicRescore)
+Mock.SetCharacter({{
+    name = "Houdro", realm = "Forever", level = 28,
+    raceName = "NightElf", raceFile = "NightElf", raceId = 4,
+    className = "Rogue", classFile = "ROGUE", classId = 4,
+    faction = "Alliance", mapId = 1440, x = 0.423, y = 0.710,
+}})
+Mock.SetBindLocation("Ironforge")
+Mock.SetHearthCooldown(0, 0)
+Mock.SetSkills({{
+    {{ name = "Skinning", rank = 225, maxRank = 225 }},
+    {{ name = "Leatherworking", rank = 165, maxRank = 225 }},
+}}, false)
+
+local addonName, ns = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonName)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+
+ns.State.SetProfile("skinning_lw")
+ns.charDB.toggles.dynamicRescore = true
+ns.charDB.toggles.preferDungeonUnlocks = false
+ns.charDB.toggles.skipEliteSolo = true
+ns.charDB.toggles.skipDungeons = true
+ns.charDB.toggles.locationReorder = true
+ns.charDB.knownFlightMasters = ns.charDB.knownFlightMasters or {{}}
+for _, fm in ipairs({{ "astranaar", "stonetalon peak", "thalanaar", "auberdine", "ironforge", "menethil harbor" }}) do
+    ns.charDB.knownFlightMasters[fm] = true
+end
+ns.Scorer.InvalidateCaches()
+ns.State.Refresh("MANUAL_SYNC")
+
+local data = ns.GetData()
+local function stepContinent(st)
+    local zid = st and st.zoneId
+    local z = zid and data.zones and data.zones[zid]
+    return z and z.region
+end
+
+local beforeSteps = ns.Scorer.GetDynamicSteps(ns.State.GetPlayerInfo(), nil, ns.charDB.toggles, 6)
+assert(#beforeSteps >= 2, "Expected dynamic steps before entering Stonetalon")
+
+Mock.SetPlayerPosition(1442, 0.364, 0.072, "Stonetalon Peak", true)
+Mock.AdvanceTimers(3.0)
+local stStonetalon1 = ns.Scorer.GetDynamicSteps(ns.State.GetPlayerInfo(), nil, ns.charDB.toggles, 6)
+assert(#stStonetalon1 >= 2, "Expected dynamic steps upon entering Stonetalon")
+
+-- While Kalimdor work remains in the lookahead queue, no Eastern Kingdoms ACCEPT/COMPLETE should jump ahead
+local hasKalimdor = false
+for idx = 1, #stStonetalon1 do
+    if stepContinent(stStonetalon1[idx]) == 1 then
+        hasKalimdor = true
+    end
+end
+assert(hasKalimdor, "Expected Kalimdor steps when inside Stonetalon Mountains")
+local seenKalimdorAhead = false
+for idx = #stStonetalon1, 1, -1 do
+    local s = stStonetalon1[idx]
+    local reg = stepContinent(s)
+    if reg == 1 and (s.action == "ACCEPT" or s.action == "COMPLETE" or s.action == "TURN_IN") then
+        seenKalimdorAhead = true
+    elseif reg == 0 and (s.action == "ACCEPT" or s.action == "COMPLETE") and seenKalimdorAhead then
+        error("Cross-continent EK " .. tostring(s.action) .. " Q" .. tostring(s.questId) .. " jumped ahead of Kalimdor work")
+    end
+end
+
+-- Synthetic multi-continent test with Hearthstone bound in Ironforge while player enters Stonetalon
+data.quests[995001] = {{
+    id = 995001, title = "Stonetalon Skinning Patrol", level = 27, minLevel = 24,
+    zoneId = 406, zoneName = "Stonetalon Mountains", factionMask = 1, xp = 2400,
+    starter = {{ zoneId = 406, x = 37.0, y = 8.0, npcName = "Kalimdor Scout" }},
+    objectives = {{ zoneId = 406, x = 42.0, y = 18.0, text = "Skin Stonetalon Beasts" }},
+    turnin = {{ zoneId = 406, x = 37.0, y = 8.0, npcName = "Kalimdor Scout" }},
+}}
+data.quests[995002] = {{
+    id = 995002, title = "Needles Hide Delivery", level = 28, minLevel = 25,
+    zoneId = 400, zoneName = "Thousand Needles", factionMask = 1, xp = 2600,
+    starter = {{ zoneId = 400, x = 89.5, y = 41.2, npcName = "Thalanaar Outrunner" }},
+    objectives = {{ zoneId = 400, x = 80.0, y = 45.0, text = "Gather Smooth Hides" }},
+    turnin = {{ zoneId = 400, x = 89.5, y = 41.2, npcName = "Thalanaar Outrunner" }},
+}}
+data.quests[995003] = {{
+    id = 995003, title = "Ironforge Artisan Contract", level = 28, minLevel = 24,
+    zoneId = 1537, zoneName = "Ironforge", factionMask = 1, xp = 4800,
+    hasLeatherworkingReward = true,
+    starter = {{ zoneId = 1537, x = 40.0, y = 50.0, npcName = "Ironforge Tanner" }},
+    objectives = {{ zoneId = 1537, x = 42.0, y = 52.0, text = "Craft Thick Armor" }},
+    turnin = {{ zoneId = 1537, x = 40.0, y = 50.0, npcName = "Ironforge Tanner" }},
+}}
+ns.Nav.Reset()
+ns.Scorer.InvalidateCaches()
+ns.Nav.EnsureEligibleIndex(data, ns.State.GetPlayerInfo())
+Mock.AcceptQuest(995003, "Ironforge Artisan Contract", 28, false)
+ns.State.Refresh("MANUAL_SYNC")
+
+local synSt = ns.Scorer.GetDynamicSteps(ns.State.GetPlayerInfo(), nil, ns.charDB.toggles, 6)
+local pos995001, pos995002, pos995003 = nil, nil, nil
+for idx, s in ipairs(synSt) do
+    if s.questId == 995001 and not pos995001 then pos995001 = idx end
+    if s.questId == 995002 and not pos995002 then pos995002 = idx end
+    if s.questId == 995003 and not pos995003 then pos995003 = idx end
+end
+assert(pos995001 ~= nil, "Expected Stonetalon quest 995001 in dynamic queue")
+if pos995003 then
+    assert(pos995001 < pos995003, "Expected Stonetalon quest ahead of Ironforge 995003")
+    if pos995002 then
+        assert(pos995002 < pos995003, "Expected Kalimdor Thousand Needles 995002 ahead of cross-continent Ironforge 995003")
+    end
+end
+
+-- Clean slate for Part B: Single-Use Virtual Hearthstone Lookahead
+Mock.Reset()
+Mock.SetCharacter({{
+    name = "Hearthcheck", realm = "Forever", level = 26,
+    raceName = "Human", raceFile = "Human", raceId = 1,
+    className = "Rogue", classFile = "ROGUE", classId = 4,
+    faction = "Alliance", mapId = 1436, x = 0.560, y = 0.520,
+}})
+Mock.SetBindLocation("Ironforge")
+Mock.SetHearthCooldown(0, 0)
+
+local addonName2, ns2 = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonName2)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+ns2.charDB.toggles.dynamicRescore = true
+ns2.charDB.knownFlightMasters = ns2.charDB.knownFlightMasters or {{}}
+for _, fm in ipairs({{ "sentinel hill", "stormwind", "ironforge", "menethil harbor" }}) do
+    ns2.charDB.knownFlightMasters[fm] = true
+end
+
+local data2 = ns2.GetData()
+data2.quests = {{
+    [995010] = {{
+        id = 995010, title = "IF Turnin Alpha", level = 26, minLevel = 20,
+        zoneId = 1537, zoneName = "Ironforge", factionMask = 1, xp = 4800,
+        starter = {{ zoneId = 1537, x = 40.0, y = 50.0, npcName = "IF Captain" }},
+        objectives = {{}},
+        turnin = {{ zoneId = 1537, x = 40.0, y = 50.0, npcName = "IF Captain" }},
+    }},
+    [995011] = {{
+        id = 995011, title = "IF Turnin Beta", level = 26, minLevel = 20,
+        zoneId = 1537, zoneName = "Ironforge", factionMask = 1, xp = 4800,
+        starter = {{ zoneId = 1537, x = 41.0, y = 51.0, npcName = "IF Smith" }},
+        objectives = {{}},
+        turnin = {{ zoneId = 1537, x = 41.0, y = 51.0, npcName = "IF Smith" }},
+    }},
+    [995012] = {{
+        id = 995012, title = "Stormwind Royal Report", level = 26, minLevel = 20,
+        zoneId = 1519, zoneName = "Stormwind City", factionMask = 1, xp = 4800,
+        starter = {{ zoneId = 1519, x = 55.0, y = 60.0, npcName = "SW Marshal" }},
+        objectives = {{}},
+        turnin = {{ zoneId = 1519, x = 55.0, y = 60.0, npcName = "SW Marshal" }},
+    }},
+    [995013] = {{
+        id = 995013, title = "Ironforge Late Followup", level = 26, minLevel = 20,
+        zoneId = 1537, zoneName = "Ironforge", factionMask = 1, xp = 1600,
+        prereqIds = {{ 995012 }},
+        starter = {{ zoneId = 1537, x = 40.0, y = 50.0, npcName = "IF Clerk" }},
+        objectives = {{ zoneId = 1537, x = 42.0, y = 52.0, text = "Inspect Ironforge Ledger" }},
+        turnin = {{ zoneId = 1537, x = 40.0, y = 50.0, npcName = "IF Clerk" }},
+    }},
+    [995014] = {{
+        id = 995014, title = "Stormwind Neighbor Turnin", level = 26, minLevel = 20,
+        zoneId = 1519, zoneName = "Stormwind City", factionMask = 1, xp = 1400,
+        starter = {{ zoneId = 1519, x = 55.5, y = 60.5, npcName = "SW Aide" }},
+        objectives = {{}},
+        turnin = {{ zoneId = 1519, x = 55.5, y = 60.5, npcName = "SW Aide" }},
+    }},
+}}
+ns2.Nav.Reset()
+ns2.Scorer.InvalidateCaches()
+local p2 = ns2.State.GetPlayerInfo()
+ns2.Nav.EnsureEligibleIndex(data2, p2)
+
+-- Direct check of vState.hearthAvailable=true vs false pricing on RankAvailableCandidates
+Mock.AcceptQuest(995010, "IF Turnin Alpha", 26, true)
+Mock.AcceptQuest(995011, "IF Turnin Beta", 26, true)
+Mock.AcceptQuest(995012, "Stormwind Royal Report", 26, true)
+Mock.AcceptQuest(995014, "Stormwind Neighbor Turnin", 26, true)
+ns2.State.Refresh("MANUAL_SYNC")
+
+local pathWithHearth = ns2.Nav.QueryPath(40, 56, 52, 1537, 40, 50, p2, {{ questId = 995010, role = "t" }})
+local pathNoHearth = ns2.Nav.QueryPath(40, 56, 52, 1537, 40, 50, p2, {{ questId = 995010, role = "t", allowHearth = false }})
+assert(pathWithHearth and pathWithHearth.usedHearth == true, "Expected ready Hearthstone to be used for IF turnin when allowed")
+assert(pathNoHearth and (not pathNoHearth.usedHearth), "Expected allowHearth=false to block Hearthstone")
+assert((pathNoHearth.totalSec or 0) > (pathWithHearth.totalSec or 0) * 2,
+    "Expected travel without Hearthstone to be significantly longer than 12s Hearthstone")
+
+local vRankBase = {{
+    player = p2, level = 26, xpPct = 0, zoneId = 40, zoneName = "Westfall", x = 56, y = 52,
+    completed = {{}}, active = {{
+        [995010] = {{ questId = 995010, isComplete = true }},
+        [995012] = {{ questId = 995012, isComplete = true }},
+    }},
+    chainFollowups = {{}}, inChainQuests = {{}}, newlyUnlocked = {{}},
+    stepCounter = 2, isLiveState = false, maxCandidates = 30,
+    seedQids = {{ 995010, 995012 }}, hearthAvailable = true,
+}}
+local function findRankPos(list, qid)
+    for i, item in ipairs(list) do
+        if item.quest and item.quest.id == qid then return i end
+    end
+    return nil
+end
+local rankWithH = ns2.Scorer.RankAvailableCandidates(vRankBase, nil, ns2.charDB.toggles, data2)
+vRankBase.hearthAvailable = false
+local rankNoH = ns2.Scorer.RankAvailableCandidates(vRankBase, nil, ns2.charDB.toggles, data2)
+local pWithH_10, pWithH_12 = findRankPos(rankWithH, 995010), findRankPos(rankWithH, 995012)
+local pNoH_10, pNoH_12 = findRankPos(rankNoH, 995010), findRankPos(rankNoH, 995012)
+assert(pWithH_10 and pWithH_12 and pWithH_10 < pWithH_12,
+    string.format("Expected Hearth-enabled Ironforge 995010 (@%s) ahead of Stormwind 995012 (@%s)", tostring(pWithH_10), tostring(pWithH_12)))
+assert(pNoH_10 and pNoH_12 and pNoH_12 < pNoH_10,
+    string.format("Expected hearthAvailable=false Stormwind 995012 (@%s) ahead of Ironforge 995010 (@%s)", tostring(pNoH_12), tostring(pNoH_10)))
+
+-- Verify full multi-step simulation consumes Hearthstone once so Stormwind local 995014 stays ahead of second IF Hearth 995013
+data2.quests[995010].xp = 6200
+data2.quests[995011].xp = 6200
+data2.quests[995012].nextQuestIds = {{ 995013 }}
+ns2.Nav.Reset()
+ns2.Scorer.InvalidateCaches()
+ns2.Nav.EnsureEligibleIndex(data2, ns2.State.GetPlayerInfo())
+local hsSteps = ns2.Scorer.GetDynamicSteps(ns2.State.GetPlayerInfo(), nil, ns2.charDB.toggles, 8)
+local idx995010, idx995012, idx995013, idx995014 = nil, nil, nil, nil
+local debugHs = {{}}
+for idx, s in ipairs(hsSteps) do
+    debugHs[#debugHs + 1] = string.format("%d:%s:%s@%s", idx, tostring(s.action), tostring(s.questId), tostring(s.zoneId))
+    if s.questId == 995010 and not idx995010 then idx995010 = idx end
+    if s.questId == 995012 and not idx995012 then idx995012 = idx end
+    if s.questId == 995013 and not idx995013 then idx995013 = idx end
+    if s.questId == 995014 and not idx995014 then idx995014 = idx end
+end
+assert(idx995010 and idx995012 and idx995014, "Expected IF & Stormwind turn-ins in multi-step plan: " .. table.concat(debugHs, ", "))
+assert(idx995010 < idx995012 and idx995012 < idx995014 and ((not idx995013) or idx995014 < idx995013),
+    "Expected consumed virtual Hearthstone to keep Stormwind neighbor 995014 ahead of returning to Ironforge 995013")
+
+-- Clean slate for Part C: Walking Target & Queue Sticky Hysteresis + Instant Invalidation
+Mock.Reset()
+Mock.SetCharacter({{
+    name = "Roadrunner", realm = "Forever", level = 24,
+    raceName = "Gnome", raceFile = "Gnome", raceId = 7,
+    className = "Rogue", classFile = "ROGUE", classId = 4,
+    faction = "Alliance", mapId = 1437, x = 0.280, y = 0.500,
+}})
+Mock.SetHearthCooldown(1, 1800)
+
+local addonName3, ns3 = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonName3)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+ns3.charDB.toggles.dynamicRescore = true
+local data3 = ns3.GetData()
+data3.quests = {{
+    [995020] = {{
+        id = 995020, title = "West Road Alpha", level = 24, minLevel = 20,
+        zoneId = 11, zoneName = "Wetlands", factionMask = 1, xp = 5500,
+        starter = {{ zoneId = 11, x = 20.0, y = 50.0, npcName = "West Marshal" }},
+        objectives = {{ zoneId = 11, x = 20.0, y = 50.0, text = "Hold West Post" }},
+        turnin = {{ zoneId = 11, x = 20.0, y = 50.0, npcName = "West Marshal" }},
+    }},
+    [995021] = {{
+        id = 995021, title = "East Road Beta", level = 24, minLevel = 20,
+        zoneId = 11, zoneName = "Wetlands", factionMask = 1, xp = 5500,
+        starter = {{ zoneId = 11, x = 42.0, y = 50.0, npcName = "East Marshal" }},
+        objectives = {{ zoneId = 11, x = 42.0, y = 50.0, text = "Hold East Post" }},
+        turnin = {{ zoneId = 11, x = 42.0, y = 50.0, npcName = "East Marshal" }},
+    }},
+}}
+ns3.Nav.Reset()
+ns3.Scorer.InvalidateCaches()
+ns3.Nav.EnsureEligibleIndex(data3, ns3.State.GetPlayerInfo())
+Mock.AcceptQuest(995020, "West Road Alpha", 24, false)
+Mock.AcceptQuest(995021, "East Road Beta", 24, false)
+ns3.State.Refresh("MANUAL_SYNC")
+
+local w1 = ns3.Scorer.GetDynamicSteps(ns3.State.GetPlayerInfo(), nil, ns3.charDB.toggles, 4)
+assert(w1[1] and w1[1].questId == 995020 and w1[1].action == "COMPLETE",
+    "Expected closer 995020 COMPLETE committed initially, got " .. tostring(w1[1] and w1[1].questId))
+assert(w1[2] and w1[2].questId == 995020 and w1[2].action == "TURN_IN",
+    "Expected 995020 TURN_IN queued second, got " .. tostring(w1[2] and w1[2].questId))
+assert(w1[3] and w1[3].questId == 995021 and w1[3].action == "COMPLETE",
+    "Expected 995021 COMPLETE queued third, got " .. tostring(w1[3] and w1[3].questId))
+
+-- Repeat call at identical position hits dynamicStepsCache (postKey match)
+local w1Repeat = ns3.Scorer.GetDynamicSteps(ns3.State.GetPlayerInfo(), nil, ns3.charDB.toggles, 4)
+assert(w1Repeat == w1, "Expected repeat GetDynamicSteps call at identical coordinates to hit dynamicStepsCache")
+
+-- Walk slightly past midpoint toward 995021 (32.5, 50.0): margin < 6.0 sticky bonus and both > 0.12m away
+Mock.SetPlayerPosition(1437, 0.325, 0.500, "Wetlands", true)
+Mock.AdvanceTimers(3.0)
+local w2 = ns3.Scorer.GetDynamicSteps(ns3.State.GetPlayerInfo(), nil, ns3.charDB.toggles, 4)
+assert(w2[1] and w2[1].questId == 995020 and w2[1].action == "COMPLETE",
+    "Expected sticky hysteresis to hold committed target 995020 while walking past midpoint")
+assert(w2[2] and w2[2].questId == 995020 and w2[2].action == "TURN_IN" and w2[3] and w2[3].questId == 995021,
+    "Expected sticky hysteresis to preserve queue order while walking")
+
+-- Turning in 995020 changes commitStateSig and immediately advances target to 995021
+Mock.TurnInQuest(995020, 5500, 0)
+ns3.State.Refresh("QUEST_TURNED_IN")
+local w3 = ns3.Scorer.GetDynamicSteps(ns3.State.GetPlayerInfo(), nil, ns3.charDB.toggles, 4)
+assert(w3[1] and w3[1].questId == 995021, "Expected immediate target advance to 995021 after turning in 995020")
+
+-- Part D: Continent & RouteDistCoord travel-aware SortReadyZones in State.lua
+Mock.Reset()
+Mock.SetCharacter({{
+    name = "ReadySorter", realm = "Forever", level = 28,
+    raceName = "NightElf", raceFile = "NightElf", raceId = 4,
+    className = "Rogue", classFile = "ROGUE", classId = 4,
+    faction = "Alliance", mapId = 1442, x = 0.364, y = 0.072,
+}})
+local addonName4, ns4 = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonName4)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+local data4 = ns4.GetData()
+data4.quests[995031] = {{
+    id = 995031, title = "Westfall Ready 40", level = 18, minLevel = 15,
+    zoneId = 40, zoneName = "Westfall", factionMask = 1, xp = 1200,
+    turnin = {{ zoneId = 40, x = 56.3, y = 47.5, npcName = "Gryan Stoutmantle" }},
+}}
+data4.quests[995032] = {{
+    id = 995032, title = "Ashenvale Ready 331", level = 25, minLevel = 20,
+    zoneId = 331, zoneName = "Ashenvale", factionMask = 1, xp = 1500,
+    turnin = {{ zoneId = 331, x = 34.4, y = 48.0, npcName = "Raene Wolfrunner" }},
+}}
+data4.quests[995033] = {{
+    id = 995033, title = "Needles Ready 400", level = 28, minLevel = 24,
+    zoneId = 400, zoneName = "Thousand Needles", factionMask = 1, xp = 1500,
+    turnin = {{ zoneId = 400, x = 89.5, y = 41.2, npcName = "Thalanaar Warden" }},
+}}
+Mock.AcceptQuest(995031, "Westfall Ready 40", 18, true)
+Mock.AcceptQuest(995032, "Ashenvale Ready 331", 25, true)
+Mock.AcceptQuest(995033, "Needles Ready 400", 28, true)
+ns4.State.Refresh("MANUAL_SYNC")
+
+local p4 = ns4.State.GetPlayerInfo()
+local dummyRouteFixed = {{
+    {{ index = 1, questId = 995030, questTitle = "Local Anchor", zoneId = 406, x = 36.4, y = 7.2, action = "COMPLETE" }},
+}}
+local plan = ns4.State.GetReadyTurnInPlan(dummyRouteFixed, 1, p4, "primary", ns4.charDB.toggles)
+local batchZones = {{}}
+for _, bStep in ipairs((plan.routeAfter and plan.routeAfter[1]) or plan.immediate or {{}}) do
+    if bStep.action == "TURN_IN" and bStep.zoneId then
+        batchZones[#batchZones + 1] = bStep.zoneId
+    end
+end
+assert(#batchZones == 3, "Expected 3 batched out-of-zone turn-ins, got " .. tostring(#batchZones))
+local zPos = {{}}
+for i, zid in ipairs(batchZones) do zPos[zid] = i end
+assert(zPos[331] and zPos[400] and zPos[40], "Expected zones 331, 400, 40 in batched plan")
+assert(zPos[331] < zPos[40] and zPos[400] < zPos[40],
+    string.format("Expected same-continent Kalimdor zones (331@%d, 400@%d) strictly before EK Westfall (40@%d despite 40 < 331)", zPos[331], zPos[400], zPos[40]))
+assert(zPos[331] < zPos[400],
+    string.format("Expected closer Ashenvale (331@%d) before Thousand Needles (400@%d) from Stonetalon", zPos[331], zPos[400]))
+
+assert(#Mock.errors == 0, "Unexpected Lua errors in anti-shuffling test: " .. table.concat(Mock.errors, "; "))
+print("ANTI_SHUFFLING_STABILITY_OK")
+"""
+        rc, out, err = _run_luajit(lua_script)
+        self.assertEqual(rc, 0, f"Anti-shuffling stability test failed:\nSTDOUT: {out}\nSTDERR: {err}")
+        self.assertIn("ANTI_SHUFFLING_STABILITY_OK", out)
 
     def test_deployed_addon_matches_source_directory(self) -> None:
         self.assertTrue(ADDON_DST.exists(), f"Installed addon directory missing: {ADDON_DST}")

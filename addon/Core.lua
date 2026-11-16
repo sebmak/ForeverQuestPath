@@ -18,7 +18,9 @@
 --      TAXIMAP_OPENED change-gated flight-master recording, /fqp gate toggle,
 --      /fqp elite toggle, /fqp skipdungeons (/fqp dungeons skip|allow|toggle),
 --      /fqp gps stats telemetry, quest hover info tooltips & click-to-open
---      Quest Log (via UI/QuestInfo.lua), and slash commands.
+--      Quest Log (via UI/QuestInfo.lua), anti-shuffling Scorer/State routing
+--      stability (continent/zone cohesion, single-use virtual hearthstone
+--      lookahead, and target hysteresis), and slash commands.
 --   2. Must tolerate missing optional addons (TomTom, OpenMap, Questie,
 --      ForeverLevelingBiS) and missing/partial GeneratedData safely.
 --   3. Keep all Lua compatible with WoW Forever 1.60.1 (Lua 5.1 semantics)
@@ -33,7 +35,7 @@ end
 addonName = addonName or "ForeverQuestPath"
 
 ns.name = addonName
-ns.version = "1.5.0"
+ns.version = "1.6.0"
 ns.PREFIX = "|cff33d9ffForeverQuestPath|r: "
 
 _G.ForeverQuestPath = ns

@@ -25,7 +25,8 @@
 --      identical coordinates, inline single-quest, TRAVEL lookahead,
 --      DUNGEON_PREP/exclusiveTo, and State.GetAcceptStepIndexMap checks),
 --      shared pending/hubEdges, perfScratch.readyStaticCache + cached
---      BuildInjectedTurninStep, hoisted zero-FNEW ready helpers, 35-bit
+--      BuildInjectedTurninStep, hoisted zero-FNEW ready helpers, continent &
+--      RouteDistCoord travel-aware perfScratch.SortReadyZones, 35-bit
 --      perfScratch.readyStepDist step-to-ready distance caching, and 50/42-bit
 --      RouteDistCoord packing for Forever IDs; near-realtime GPS walking reorder
 --      with hysteresis (lazy single-source nav field priming, multi-cursor
@@ -433,6 +434,8 @@ local perfScratch = {
     inDungVAct = {},
     inDungIncQids = {},
     inDungOutQids = {},
+    readyZoneSameReg = {},
+    readyZoneDist = {},
 }
 local decCache = {
     byMaxOff = {},
@@ -4207,6 +4210,18 @@ function perfScratch.SortReadyZones(a, b)
     local pz = perfScratch.readySortPZone
     if a == pz and b ~= pz then return true end
     if b == pz and a ~= pz then return false end
+    local sameReg = perfScratch.readyZoneSameReg
+    local sa = sameReg[a] and true or false
+    local sb = sameReg[b] and true or false
+    if sa ~= sb then
+        return sa
+    end
+    local zd = perfScratch.readyZoneDist
+    local da = zd[a] or 999999
+    local db = zd[b] or 999999
+    if da ~= db then
+        return da < db
+    end
     return (tonumber(a) or 0) < (tonumber(b) or 0)
 end
 
@@ -5076,8 +5091,31 @@ function State.GetReadyTurnInPlan(steps, cursor, player, pkey, toggles)
 
         if next(unvisitedByZone) then
             local zoneOrder = {}
-            for zId in pairs(unvisitedByZone) do
+            local sameReg = perfScratch.readyZoneSameReg
+            local zDist = perfScratch.readyZoneDist
+            for k in pairs(sameReg) do sameReg[k] = nil end
+            for k in pairs(zDist) do zDist[k] = nil end
+            local dataZones = data and data.zones
+            local pReg = (pZone and dataZones and dataZones[pZone]) and dataZones[pZone].region
+            for zId, bucket in pairs(unvisitedByZone) do
                 zoneOrder[#zoneOrder + 1] = zId
+                local zReg = dataZones and dataZones[zId] and dataZones[zId].region
+                sameReg[zId] = (pReg ~= nil and zReg ~= nil and zReg == pReg) and true or false
+                if zId == pZone then
+                    zDist[zId] = 0
+                elseif pZone and RouteDistCoord then
+                    local bestDist = nil
+                    for bi = 1, #bucket do
+                        local info = bucket[bi]
+                        local d = RouteDistCoord(pZone, pX or 50, pY or 50, zId, info and info.x or 50, info and info.y or 50, player, info and info.questId, "t")
+                        if d and (bestDist == nil or d < bestDist) then
+                            bestDist = d
+                        end
+                    end
+                    zDist[zId] = bestDist and math.floor(bestDist * 10 + 0.5) or 999999
+                else
+                    zDist[zId] = 999999
+                end
             end
             perfScratch.readySortPZone = pZone
             table.sort(zoneOrder, perfScratch.SortReadyZones)
