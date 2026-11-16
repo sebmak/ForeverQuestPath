@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Rules for install_addon.sh:
+# - Validates ForeverQuestPath.toc headers (## Interface: 16001 and SavedVariables),
+#   manifest entries, and Lua syntax/bytecode before touching AddOns.
+# - Syncs addon/ to the target WoW Forever AddOns directory with rsync --delete,
+#   refreshes the top-level AddOn directory timestamp for Finder/WowUp visibility,
+#   and verifies byte-for-byte parity afterward.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -247,6 +253,7 @@ fi
 echo "[3/4] Syncing addon to ${ADDON_DEST}..."
 mkdir -p "${ADDON_DEST}"
 rsync -a --delete --exclude '.DS_Store' "${ADDON_SRC}/" "${ADDON_DEST}/"
+touch "${ADDON_DEST}"
 
 echo "[4/4] Verifying synced destination..."
 if [[ ! -f "${ADDON_DEST}/ForeverQuestPath.toc" ]]; then
