@@ -21,11 +21,13 @@
 --      and memoizing read views per generation plus step-1 isLiveState /
 --      seedQids / dynamicStepsCache with metatable vCompleted.
 --   3. Ready turn-ins in active log are never blocked by eligibility, exclusive
---      lists, elite-solo gating, or level offset checks; open-world elite
---      quests (incomplete active or available) are skipped when skipEliteNow
---      is true (toggles.skipEliteSolo ~= false and solo), while dungeon quests
---      remain unaffected; pure scoring functions must never mutate live
---      SavedVariables or game state.
+--      lists, elite-solo gating, dungeon-skip gating, or level offset checks;
+--      open-world elite quests (incomplete active or available) are skipped
+--      when skipEliteNow is true (toggles.skipEliteSolo ~= false and solo),
+--      and instance dungeon quests (q.isDungeon or act.isDungeon) are skipped
+--      when skipDungeons is enabled (toggles.skipDungeons ~= false) while
+--      preserving ready turn-ins and outdoor unlock quests; pure scoring
+--      functions must never mutate live SavedVariables or game state.
 --   4. Travel estimates and dynamic candidate selection plug into ns.Nav
 --      (terrain/road/gate Bidirectional Dijkstra + frontier nodeToEligible
 --      search, with bounded skipIndexRebuild=true lookahead steps) when
@@ -796,8 +798,9 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
         local hReady = (ns.Nav and ns.Nav.IsHearthReady and ns.Nav.IsHearthReady()) and 1 or 0
         local hasQdb = (_G.QuestieDB ~= nil or _G.QuestieLoader ~= nil) and 1 or 0
         local rankSkipElite = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(vp, toggles) or (toggles.skipEliteSolo ~= false and not (vp and vp.inGroup))
+        local rankSkipDungeons = (ns.State and ns.State.ShouldSkipDungeonsNow) and ns.State.ShouldSkipDungeonsNow(toggles) or (toggles.skipDungeons ~= false)
         rankLiveKey = string.format(
-            "%d:%d:%d:%d:%s:%d:%d:%d:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%d:%s:%s:%d:%d:%d:%d",
+            "%d:%d:%d:%d:%s:%d:%d:%d:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%d:%s:%s:%d:%d:%d:%d:%d",
             gen, sGen, pLevel, maxOffset, tostring(vState.zoneId or 0), qx, qy, cap,
             tonumber(weights.xp) or 45,
             tonumber(weights.travel) or 25,
@@ -816,7 +819,8 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             hReady,
             hasQdb,
             #((ns.State.GetBlockedSteps and ns.State.GetBlockedSteps()) or {}),
-            rankSkipElite and 1 or 0
+            rankSkipElite and 1 or 0,
+            rankSkipDungeons and 1 or 0
         ) .. "|" .. readySig .. "|" .. locSig
         if rankLiveCache.valid and rankLiveCache.key == rankLiveKey and rankLiveCache.out then
             if vState and rankLiveCache.seedQids then
@@ -1054,6 +1058,9 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
     local evalSkipElite = (ns.State and ns.State.ShouldSkipEliteNow)
         and ns.State.ShouldSkipEliteNow(vPlayer, toggles)
         or (toggles.skipEliteSolo ~= false and not (vPlayer and vPlayer.inGroup))
+    local evalSkipDungeons = (ns.State and ns.State.ShouldSkipDungeonsNow)
+        and ns.State.ShouldSkipDungeonsNow(toggles)
+        or (toggles.skipDungeons ~= false)
 
     local function TryEvaluateQuestId(qid, q)
         if not q or vState.completed[qid] then
@@ -1065,11 +1072,13 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             EvaluateAndPush(q, "TURN_IN")
         elseif activeEntry then
             if ns.State.IsEligibleForPlayer(qid, vPlayer)
-                and not (evalSkipElite and (not q.isDungeon) and (q.isGroup == true or activeEntry.isElite == true)) then
+                and not (evalSkipElite and (not q.isDungeon) and (q.isGroup == true or activeEntry.isElite == true))
+                and not (evalSkipDungeons and (q.isDungeon == true or activeEntry.isDungeon == true)) then
                 EvaluateAndPush(q, "COMPLETE")
             end
         elseif (q.minLevel or 1) <= pLevel and (q.questLevel or 0) <= pLevel + maxOffset
-            and not (evalSkipElite and q.isGroup == true and not q.isDungeon) then
+            and not (evalSkipElite and q.isGroup == true and not q.isDungeon)
+            and not (evalSkipDungeons and q.isDungeon == true) then
             if navIndexedOkFn and navIndexedOkFn(qid) then
                 local exclBlocked = false
                 if (not isLive) and q.exclusiveTo then
@@ -1314,9 +1323,10 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
     local blkCount = #((ns.State and ns.State.GetBlockedSteps and ns.State.GetBlockedSteps()) or {})
     local prof = player and player.professions
     local skipEliteNow = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(player, toggles) or (toggles.skipEliteSolo ~= false and not (player and player.inGroup))
+    local skipDungeonsNow = (ns.State and ns.State.ShouldSkipDungeonsNow) and ns.State.ShouldSkipDungeonsNow(toggles) or (toggles.skipDungeons ~= false)
 
     local dynKey = string.format(
-        "%d:%d:%d:%d:%d:%s:%s:%s:%s:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d:%d",
+        "%d:%d:%d:%d:%d:%s:%s:%s:%s:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d:%d",
         gen, sGen,
         tonumber(player and player.level) or 24,
         tonumber(player and player.xpPct) or 0,
@@ -1338,6 +1348,7 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
         tostring(toggles.locationReorder ~= false),
         tostring(toggles.proactiveChains ~= false),
         tostring(skipEliteNow),
+        tostring(skipDungeonsNow),
         tostring(player and player.raceId or 0),
         tostring(player and player.faction or "Alliance"),
         tostring(player and player.classFile or "ROGUE"),
@@ -1379,6 +1390,7 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
             isComplete = entry.isComplete,
             isFailed = entry.isFailed,
             isElite = entry.isElite,
+            isDungeon = entry.isDungeon,
         }
     end
 
@@ -1500,6 +1512,7 @@ function Scorer.GetPriorityClassQuestStep(player, toggles, routeZoneId, data)
     local skipped = (ns.charDB and ns.charDB.skippedSteps) or {}
     local pLevel = tonumber(player.level) or 1
     local skipEliteNow = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(player, toggles) or (toggles.skipEliteSolo ~= false and not (player and player.inGroup))
+    local skipDungeonsNow = (ns.State and ns.State.ShouldSkipDungeonsNow) and ns.State.ShouldSkipDungeonsNow(toggles) or (toggles.skipDungeons ~= false)
     local best, bestPri = nil, -999999
     local fastOpts = { consultQuestie = false, checkIsDoable = false, useBulkCompletion = true, reasonless = true }
 
@@ -1516,8 +1529,12 @@ function Scorer.GetPriorityClassQuestStep(player, toggles, routeZoneId, data)
                     local blocked
                     if action == "ACCEPT" then
                         blocked = ns.State.GetQuestBlockReason(qid, "ACCEPT", player, nil, nil, toggles, fastOpts)
-                    elseif action == "COMPLETE" and skipEliteNow and ns.State.IsQuestElite and ns.State.IsQuestElite(qid, q) then
-                        blocked = "elite_solo"
+                    elseif action == "COMPLETE" then
+                        if skipEliteNow and ns.State.IsQuestElite and ns.State.IsQuestElite(qid, q) then
+                            blocked = "elite_solo"
+                        elseif skipDungeonsNow and ((q and q.isDungeon == true) or (ns.State.IsQuestDungeon and ns.State.IsQuestDungeon(qid, q))) then
+                            blocked = "dungeon_skipped"
+                        end
                     end
                     if not blocked then
                         local qZone = q.zoneId

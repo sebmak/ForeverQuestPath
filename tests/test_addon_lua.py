@@ -79,7 +79,12 @@ def _run_luajit(script: str) -> tuple[int, str, str]:
 #   HasEliteDeferredPrereq, excluding dungeons and ready elite turn-ins, live group/raid roster
 #   boolean-change gating via GROUP_ROSTER_UPDATE / PARTY_MEMBERS_CHANGED / RAID_ROSTER_UPDATE,
 #   /fqp elite command, and synchronized Route + Settings "Skip Elite (Solo)" checkboxes),
-#   AddonCompartment, waypoints, and byte-for-byte sync.
+#   skipDungeons option (enabled by default, dungeon instance quest deferral in deferredSteps +
+#   HasEliteDeferredPrereq, preserving completed ready turn-ins & outdoor unlock/attunement chains
+#   plus Dungeons & BiS tab visibility, Nav/Scorer/GPS/Window filtering, HUD [Dungeon] badge and
+#   'No Dung'/'Dung On' mode indicator, /fqp skipdungeons & /fqp dungeons skip|allow|toggle commands,
+#   synchronized Route + Settings "Skip Dungeons" checkboxes, and cursor rewind to do all
+#   deferred dungeon quests at once when turned off), AddonCompartment, waypoints, and sync.
 class TestForeverQuestPathAddon(unittest.TestCase):
     """Lua 5.1 / WoW Forever 16001 harness tests for ForeverQuestPath addon."""
 
@@ -3007,15 +3012,26 @@ Mock.FireEvent("ADDON_LOADED", addonName2)
 Mock.FireEvent("PLAYER_LOGIN")
 Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
 
--- Verify Lv30 dungeon quest Q96394 is NEVER blocked with elite_solo while solo
+-- Verify Lv30 dungeon quest Q96394 is NEVER blocked with elite_solo while solo;
+-- under default skipDungeons=true it is skipped with 'dungeon_skipped', and when skipDungeons=false it is unblocked even while solo
 local dc96394 = ns2.State.GetQuestBlockReason(96394)
-assert(dc96394 ~= "elite_solo", "Dungeon quest 96394 must never be blocked with 'elite_solo', got " .. tostring(dc96394))
+assert(dc96394 == "dungeon_skipped", "Dungeon quest 96394 should be blocked with 'dungeon_skipped' under default skipDungeons=true, got " .. tostring(dc96394))
 local stepsB, _, pkeyB = ns2.State.GetActiveProfileSteps()
 local idxDungRun = findStepIndex(stepsB, 96394, "DUNGEON_RUN")
 if idxDungRun then
     local dbCode = ns2.State.IsStepBlocked(stepsB[idxDungRun], stepsB, idxDungRun, ns2.State.GetPlayerInfo(), pkeyB, nil, nil, ns2.charDB.toggles)
-    assert(dbCode ~= "elite_solo", "DUNGEON_RUN step must never be blocked with 'elite_solo'")
+    assert(dbCode == "dungeon_skipped", "DUNGEON_RUN step should be blocked with 'dungeon_skipped', got " .. tostring(dbCode))
 end
+ns2.charDB.toggles.skipDungeons = false
+ns2.State.Refresh("TOGGLE_skipDungeons")
+local dc96394Allow = ns2.State.GetQuestBlockReason(96394)
+assert(dc96394Allow == nil, "Expected dungeon quest 96394 unblocked while solo when skipDungeons=false, got " .. tostring(dc96394Allow))
+if idxDungRun then
+    local dbCodeAllow = ns2.State.IsStepBlocked(stepsB[idxDungRun], stepsB, idxDungRun, ns2.State.GetPlayerInfo(), pkeyB, nil, nil, ns2.charDB.toggles)
+    assert(dbCodeAllow == nil, "Expected DUNGEON_RUN step unblocked while solo when skipDungeons=false, got " .. tostring(dbCodeAllow))
+end
+ns2.charDB.toggles.skipDungeons = true
+ns2.State.Refresh("TOGGLE_skipDungeons")
 
 -- Test elite chain prereq deferral: Q631 (elite, 986) -> Q632 (non-elite, prereq 631, 988)
 local idxAcc631 = findStepIndex(stepsB, 631, "ACCEPT")
@@ -3103,6 +3119,324 @@ print("SKIP_ELITE_UNLESS_GROUPED_OK")
         rc, out, err = _run_luajit(lua_script)
         self.assertEqual(rc, 0, f"Skip elite unless grouped test failed:\nSTDOUT: {out}\nSTDERR: {err}")
         self.assertIn("SKIP_ELITE_UNLESS_GROUPED_OK", out)
+
+    def test_skip_dungeon_quests_option(self) -> None:
+        lua_script = f"""
+local Mock = dofile({str(WOW_MOCK_LUA)!r})
+
+local function findStepIndex(steps, questId, action)
+    for i, st in ipairs(steps or {{}}) do
+        if st.questId == questId and (action == nil or (st.action or "ACCEPT") == action) then
+            return i
+        end
+    end
+    return nil
+end
+
+local function stepInList(list, questId, action)
+    for _, st in ipairs(list or {{}}) do
+        if st and st.questId == questId and (action == nil or (st.action or "ACCEPT") == action) then
+            return true, st
+        end
+    end
+    return false, nil
+end
+
+-- ============================================================================
+-- Part A: Default skipDungeons=true, Ironforge/Westfall routing, Nav & Scorer
+-- ============================================================================
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Stonevault",
+    realm = "Forever",
+    level = 15,
+    raceName = "Gnome",
+    raceFile = "Gnome",
+    raceId = 7,
+    className = "Rogue",
+    classFile = "ROGUE",
+    classId = 4,
+    faction = "Alliance",
+    mapId = 1455, -- Ironforge (1537), Hall of Thanes steps [296..302]
+    x = 0.50,
+    y = 0.50,
+}})
+-- Complete prereqs for Lv15 Ironforge/Westfall checks & outdoor unlock Q92747
+Mock.CompleteQuest(92745)
+Mock.CompleteQuest(155)
+Mock.SetGroup(true, 5, false, true) -- Even while grouped, skipDungeons skips quests inside dungeons!
+
+local addonName, ns = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonName)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+
+assert(ns.charDB and ns.charDB.toggles and ns.charDB.toggles.skipDungeons == true,
+    "Expected skipDungeons to default to true")
+assert(ns.State.ShouldSkipDungeonsNow(ns.charDB.toggles) == true,
+    "Expected ShouldSkipDungeonsNow() == true with default toggle")
+
+-- IsQuestDungeon classification & outdoor dungeon-unlock preservation
+assert(ns.State.IsQuestDungeon(166) == true, "Expected Deadmines quest Q166 to be classified as dungeon quest")
+assert(ns.State.IsQuestDungeon(96394) == true, "Expected Hall of Thanes quest Q96394 to be classified as dungeon quest")
+assert(ns.State.IsQuestDungeon(92747) == false, "Expected outdoor unlock quest Q92747 not to be classified as dungeon quest")
+assert(ns.State.IsQuestDungeon(176) == false, "Expected open-world elite Q176 not to be classified as dungeon quest")
+
+local b92747 = ns.State.GetQuestBlockReason(92747)
+assert(b92747 == nil, "Outdoor unlock quest Q92747 should NOT be skipped by skipDungeons, got " .. tostring(b92747))
+local b96394, r96394 = ns.State.GetQuestBlockReason(96394, "DUNGEON_PREP")
+assert(b96394 == "dungeon_skipped", "Expected dungeon quest Q96394 blocked with 'dungeon_skipped', got " .. tostring(b96394))
+assert(type(r96394) == "string" and r96394 ~= "", "Expected non-empty reason for dungeon_skipped")
+local b214 = ns.State.GetQuestBlockReason(214, "ACCEPT")
+assert(b214 == "dungeon_skipped", "Expected Q214 (Lv17) blocked with 'dungeon_skipped' at Lv15, got " .. tostring(b214))
+local lv20Player = {{ level = 20, faction = "Alliance", raceId = 7, classId = 4 }}
+local b166 = ns.State.GetQuestBlockReason(166, "ACCEPT", lv20Player)
+assert(b166 == "dungeon_skipped", "Expected Q166 blocked with 'dungeon_skipped' at Lv20, got " .. tostring(b166))
+
+local vmInit = ns.HUD.GetViewModel()
+assert(vmInit and vmInit.skipDungeons == true, "Expected HUD viewmodel skipDungeons == true")
+assert(vmInit.modeLabel and vmInit.modeLabel:find("No Dung", 1, true),
+    "Expected HUD modeLabel to include 'No Dung', got " .. tostring(vmInit.modeLabel))
+
+-- Verify cursor skips DUNGEON_PREP (296) -> DUNGEON_RUN (299) -> TURN_IN (302) and records in deferredSteps
+local stepsA, _, pkeyA = ns.State.GetActiveProfileSteps()
+local idxPrep96394 = findStepIndex(stepsA, 96394, "DUNGEON_PREP")
+local idxRun96394 = findStepIndex(stepsA, 96394, "DUNGEON_RUN")
+local idxTurn96394 = findStepIndex(stepsA, 96394, "TURN_IN")
+assert(idxPrep96394 and idxRun96394 and idxTurn96394, "Expected Hall of Thanes Q96394 PREP/RUN/TURN_IN in balanced route")
+
+ns.State.JumpToStep(idxPrep96394)
+local curSkip, _ = ns.State.GetCurrentStep()
+assert(curSkip and curSkip.questId ~= 96394 and curSkip.action ~= "DUNGEON_PREP" and curSkip.action ~= "DUNGEON_RUN",
+    "Expected cursor to skip Hall of Thanes dungeon batch, landed on " .. tostring(curSkip and curSkip.action) .. ":" .. tostring(curSkip and curSkip.questId))
+local defA = ns.charDB.deferredSteps and ns.charDB.deferredSteps[pkeyA]
+local skipA = ns.charDB.skippedSteps and ns.charDB.skippedSteps[pkeyA]
+assert(defA and defA[idxPrep96394] == true and defA[idxRun96394] == true and defA[idxTurn96394] == true,
+    "Expected skipped dungeon steps recorded in deferredSteps")
+for _, checkIdx in ipairs({{ idxPrep96394, idxRun96394, idxTurn96394 }}) do
+    local skKey = ns.State.GetStepKey(stepsA[checkIdx], checkIdx, pkeyA)
+    assert(not (skipA and (skipA[checkIdx] or skipA[skKey])), "Deferred dungeon steps must NOT be written into skippedSteps")
+end
+
+-- GetUpcomingSteps, Window.routeRows, Nav.FindNearestEligibleQuests, Scorer.GetDynamicSteps all skip 96394
+local upcomingSkip = ns.State.GetUpcomingSteps(12)
+for _, us in ipairs(upcomingSkip) do
+    assert(us.action ~= "DUNGEON_PREP" and us.action ~= "DUNGEON_RUN" and us.questId ~= 96394,
+        "Expected GetUpcomingSteps to exclude dungeon steps while skipDungeons=true")
+end
+
+ns.Window.ShowTab("route")
+local snapSkip = ns.Window.GetSnapshot()
+assert(snapSkip.skipDungeons == true, "Expected Window snapshot skipDungeons == true")
+assert(type(snapSkip.dungeons) == "table" and #snapSkip.dungeons > 0, "Expected Dungeons & BiS tab data still populated")
+for _, row in ipairs(snapSkip.routeRows or {{}}) do
+    local st = row and row.step
+    if st and (st.questId == 96394 or st.action == "DUNGEON_PREP" or st.action == "DUNGEON_RUN") and (not row.isBlocked) then
+        error("Expected Window remaining routeRows not to show unblocked dungeon step: " .. tostring(st.action) .. ":" .. tostring(st.questId))
+    end
+end
+
+local nearSkip, nearSkipN = ns.Nav.FindNearestEligibleQuests(1537, 0.50, 0.50, ns.GetData(), ns.State.GetPlayerInfo(), {{
+    maxSec = 1800,
+    maxResults = 60,
+    noCap = true,
+}})
+for i = 1, (nearSkipN or 0) do
+    local r = nearSkip[i]
+    assert(r.qid ~= 96394 and r.qid ~= 96395 and r.qid ~= 96403,
+        "Expected Nav.FindNearestEligibleQuests to exclude dungeon quests while skipDungeons=true, got " .. tostring(r.qid))
+end
+local dynSkip = ns.Scorer.GetDynamicSteps(ns.State.GetPlayerInfo(), ns.GetActiveWeights(), ns.charDB.toggles, 30)
+assert(not stepInList(dynSkip, 96394, nil), "Expected Scorer.GetDynamicSteps to exclude unaccepted Q96394")
+
+-- Toggling /fqp skipdungeons off rewinds cursor to the deferred Hall of Thanes DUNGEON_PREP 96394 batch
+Mock.RunSlash("/fqp", "skipdungeons off")
+local vmDungAllowA = ns.HUD.GetViewModel()
+assert(vmDungAllowA.modeLabel and vmDungAllowA.modeLabel:find("Dung On", 1, true),
+    "Expected HUD modeLabel 'Dung On' in Part A, got " .. tostring(vmDungAllowA.modeLabel))
+local curRewindA, _ = ns.State.GetCurrentStep()
+assert(curRewindA and curRewindA.questId == 96394 and curRewindA.action == "DUNGEON_PREP",
+    "Expected /fqp skipdungeons off to rewind to DUNGEON_PREP 96394, got "
+    .. tostring(curRewindA and curRewindA.action) .. ":" .. tostring(curRewindA and curRewindA.questId))
+Mock.RunSlash("/fqp", "skipdungeons on")
+local curReDeferA, _ = ns.State.GetCurrentStep()
+assert(curReDeferA and curReDeferA.questId ~= 96394, "Expected /fqp skipdungeons on to re-defer Q96394")
+
+-- ============================================================================
+-- Part B: Incomplete active dungeon quests skipped, Ready turn-ins ALWAYS preserved
+-- ============================================================================
+-- Accept Q96394 + an off-DB "Dungeon"-tagged quest + test QuestieDB questFlags=32 classification
+Mock.AcceptQuest(96394, "The Restless Dead", 15, false, "Dungeon")
+Mock.AcceptQuest(999921, "Custom Instance Contract", 15, false, "Dungeon")
+_G.QuestieDB = {{
+    QueryQuestSingle = function(qid, field)
+        if qid == 999922 then
+            if field == "name" then return "Questie Flagged Instance Quest"
+            elseif field == "requiredLevel" then return 10
+            elseif field == "questLevel" then return 15
+            elseif field == "questFlags" then return 32
+            end
+        end
+        return nil
+    end,
+    IsDoable = function() return true end,
+}}
+assert(ns.State.IsQuestDungeon(999921) == true, "Expected off-DB Dungeon-tagged quest 999921 detected as dungeon")
+assert(ns.State.IsQuestDungeon(999922) == true, "Expected QuestieDB questFlags bit-32 quest 999922 detected as dungeon")
+assert(ns.State.GetQuestBlockReason(96394, "COMPLETE") == "dungeon_skipped",
+    "Expected incomplete active dungeon quest 96394 blocked with 'dungeon_skipped'")
+assert(ns.State.GetQuestBlockReason(999921, "COMPLETE") == "dungeon_skipped",
+    "Expected incomplete off-DB Dungeon quest 999921 blocked with 'dungeon_skipped'")
+assert(ns.State.GetQuestBlockReason(999922, "ACCEPT") == "dungeon_skipped",
+    "Expected QuestieDB flag-32 quest 999922 blocked with 'dungeon_skipped'")
+_G.QuestieDB = nil
+
+-- Nav & Scorer must exclude incomplete active dungeon quest Q96394
+local nearInc, nearIncN = ns.Nav.FindNearestEligibleQuests(1537, 0.50, 0.50, ns.GetData(), ns.State.GetPlayerInfo(), {{
+    maxSec = 1800,
+    maxResults = 60,
+    noCap = true,
+}})
+for i = 1, (nearIncN or 0) do
+    assert(nearInc[i].qid ~= 96394, "Expected Nav to exclude incomplete active dungeon quest 96394")
+end
+local dynInc = ns.Scorer.GetDynamicSteps(ns.State.GetPlayerInfo(), ns.GetActiveWeights(), ns.charDB.toggles, 25)
+assert(not stepInList(dynInc, 96394, "COMPLETE"), "Expected Scorer not to suggest COMPLETE 96394 while skipDungeons=true")
+
+-- Mark Q96394 and off-DB Q999921 COMPLETE (ready for turn-in) -> MUST surface immediately even while skipDungeons=true!
+Mock.TurnInQuest(999921, 0, 0) -- remove 999921 incomplete first
+Mock.SetQuestObjectivesComplete(96394, true)
+assert(ns.State.GetQuestBlockReason(96394, "TURN_IN") == nil,
+    "Completed ready dungeon quest 96394 turn-in must NEVER be blocked")
+local curReadyDung, metaReadyDung = ns.State.GetCurrentStep()
+assert(curReadyDung and curReadyDung.isReadyTurnIn == true and curReadyDung.questId == 96394 and curReadyDung.action == "TURN_IN",
+    "Expected ready dungeon quest Q96394 to surface immediately as [Ready Turn-In], got " .. tostring(curReadyDung and curReadyDung.questId))
+local vmReadyDung = ns.HUD.GetViewModel()
+assert(vmReadyDung and vmReadyDung.current and vmReadyDung.current.actionText:find("Ready Turn-In", 1, true),
+    "Expected HUD actionText '[Ready Turn-In]' for completed dungeon quest")
+assert(vmReadyDung.current.badgesLine and vmReadyDung.current.badgesLine:find("[Dungeon]", 1, true),
+    "Expected HUD badgesLine '[Dungeon]' on ready dungeon TURN_IN step")
+local dynReadyDung = ns.Scorer.GetDynamicSteps(ns.State.GetPlayerInfo(), ns.GetActiveWeights(), ns.charDB.toggles, 25)
+assert(stepInList(dynReadyDung, 96394, "TURN_IN"), "Expected Scorer to preserve ready TURN_IN 96394 while skipDungeons=true")
+
+-- Clean up 96394 into completed log for rewind test below
+Mock.TurnInQuest(96394, 1000, 100)
+
+-- ============================================================================
+-- Part C: Slash commands (/fqp skipdungeons, /fqp dungeons allow|skip|toggle),
+--         checkboxes in Route + Settings tabs, prereq cascade, and cursor rewind
+-- ============================================================================
+-- Test bare '/fqp dungeons' still opens the Dungeons tab
+ns.Window.ShowTab("route")
+Mock.RunSlash("/fqp", "dungeons")
+assert(ns.Window.GetSnapshot().activeTab == "dungeons", "Bare '/fqp dungeons' should still open Dungeons tab")
+
+-- Jump to Lv42 Badlands scenario to verify dungeon -> outdoor prereq cascade Q722 -> Q723 -> Q724 + rewind on toggle off
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "DungRunner",
+    realm = "Forever",
+    level = 42,
+    raceName = "Gnome",
+    raceFile = "Gnome",
+    raceId = 7,
+    className = "Rogue",
+    classFile = "ROGUE",
+    classId = 4,
+    faction = "Alliance",
+    mapId = 1418, -- Badlands
+    x = 0.42,
+    y = 0.52,
+}})
+Mock.CompleteQuest(721)
+local addon2, ns2 = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addon2)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+
+local steps2, _, pkey2 = ns2.State.GetActiveProfileSteps()
+local idxAcc722 = findStepIndex(steps2, 722, "ACCEPT")
+local idxAcc723 = findStepIndex(steps2, 723, "ACCEPT")
+assert(idxAcc722 and idxAcc723, "Expected Q722 (dungeon prereq) and Q723 (outdoor followup) in balanced route")
+
+-- Jump ONCE to Q722: skips dungeon Q722 and prereq-locked outdoor follow-up Q723, recording both in deferredSteps
+ns2.State.JumpToStep(idxAcc722)
+local curAfterJump2, _ = ns2.State.GetCurrentStep()
+assert(curAfterJump2 and curAfterJump2.questId ~= 722 and curAfterJump2.questId ~= 723,
+    "Expected Q722 and outdoor prereq-locked followup Q723 to defer cleanly when skipDungeons=true, landed on "
+    .. tostring(curAfterJump2 and curAfterJump2.questId))
+local def2 = ns2.charDB.deferredSteps and ns2.charDB.deferredSteps[pkey2]
+assert(def2 and def2[idxAcc722] == true and def2[idxAcc723] == true,
+    "Expected both Q722 dungeon step and prereq-locked Q723 in deferredSteps")
+
+-- /fqp skipdungeons off unlocks & rewinds cursor back to idxAcc722 so user can run all deferred dungeons together!
+Mock.RunSlash("/fqp", "skipdungeons off")
+assert(ns2.Window.GetSnapshot().skipDungeons == false, "Expected /fqp skipdungeons off -> false")
+local vmAllow = ns2.HUD.GetViewModel()
+assert(vmAllow.modeLabel:find("Dung On", 1, true), "Expected HUD modeLabel 'Dung On', got " .. tostring(vmAllow.modeLabel))
+local curRewound, _ = ns2.State.GetCurrentStep()
+assert(curRewound and curRewound.questId == 722 and curRewound.action == "ACCEPT",
+    "Expected toggling skipDungeons OFF to rewind cursor to deferred ACCEPT 722, got "
+    .. tostring(curRewound and curRewound.action) .. ":" .. tostring(curRewound and curRewound.questId))
+
+-- /fqp dungeons skip & /fqp dungeons allow & /fqp skipdungeons toggle work consistently
+Mock.RunSlash("/fqp", "dungeons skip")
+assert(ns2.Window.GetSnapshot().skipDungeons == true, "Expected /fqp dungeons skip -> true")
+assert(ns2.State.GetCurrentStep().questId ~= 722, "Expected /fqp dungeons skip to re-defer Q722")
+Mock.RunSlash("/fqp", "dungeons allow")
+assert(ns2.Window.GetSnapshot().skipDungeons == false, "Expected /fqp dungeons allow -> false")
+assert(ns2.State.GetCurrentStep().questId == 722, "Expected /fqp dungeons allow to rewind to Q722")
+Mock.RunSlash("/fqp", "skipdungeons on")
+assert(ns2.Window.GetSnapshot().skipDungeons == true, "Expected /fqp skipdungeons on -> true")
+
+-- Locate both "Skip Dungeons" checkboxes (Route tab + Settings/Diag tab) and verify sync + 0 allocations
+local win2 = Mock.FindFrameByName("ForeverQuestPathWindow")
+local dungChks = {{}}
+local function collectDungChecks(frame)
+    if frame and frame.label and frame.label.GetText then
+        local txt = frame.label:GetText()
+        if txt and txt:find("Skip Dungeons", 1, true) then
+            dungChks[#dungChks + 1] = frame
+        end
+    end
+    for _, ch in ipairs((frame and frame._children) or {{}}) do
+        collectDungChecks(ch)
+    end
+end
+ns2.Window.ShowTab("route")
+ns2.Window.ShowTab("diag")
+collectDungChecks(win2)
+assert(#dungChks == 2, "Expected 2 'Skip Dungeons' checkboxes (Route + Diag tabs), found " .. tostring(#dungChks))
+assert(dungChks[1].checked == true and dungChks[2].checked == true,
+    "Expected both Skip Dungeons checkboxes initially checked")
+
+Mock.ResetMetrics()
+ns2.Window.ShowTab("route")
+dungChks[1]:Click()
+assert(ns2.Window.GetSnapshot().skipDungeons == false, "Clicking Route Skip Dungeons checkbox should set false")
+assert(dungChks[1].checked == false and dungChks[2].checked == false, "Both Skip Dungeons checkboxes must sync to false")
+assert(ns2.State.GetCurrentStep().questId == 722, "Unchecking Route Skip Dungeons should rewind cursor to Q722")
+
+ns2.Window.ShowTab("diag")
+dungChks[2]:Click()
+assert(ns2.Window.GetSnapshot().skipDungeons == true, "Clicking Diag Skip Dungeons checkbox should set true")
+assert(dungChks[1].checked == true and dungChks[2].checked == true, "Both Skip Dungeons checkboxes must sync to true")
+assert(ns2.State.GetCurrentStep().questId ~= 722, "Checking Diag Skip Dungeons should re-defer Q722")
+
+Mock.RunSlash("/fqp", "skipdungeons toggle")
+assert(ns2.Window.GetSnapshot().skipDungeons == false, "Expected /fqp skipdungeons toggle -> false")
+Mock.RunSlash("/fqp", "dungeons toggle")
+assert(ns2.Window.GetSnapshot().skipDungeons == true, "Expected /fqp dungeons toggle -> true")
+
+local m2 = Mock.GetMetrics()
+assert(m2.createFrameCalls == 0, "Expected 0 CreateFrame calls during Skip Dungeons transitions, got " .. tostring(m2.createFrameCalls))
+assert(m2.createRegionCalls == 0, "Expected 0 CreateRegion calls during Skip Dungeons transitions, got " .. tostring(m2.createRegionCalls))
+assert(#Mock.errors == 0, "Unexpected Lua errors in skip-dungeons test: " .. table.concat(Mock.errors, "; "))
+print("SKIP_DUNGEON_QUESTS_OPTION_OK")
+"""
+        rc, out, err = _run_luajit(lua_script)
+        self.assertEqual(rc, 0, f"Skip dungeon quests test failed:\nSTDOUT: {out}\nSTDERR: {err}")
+        self.assertIn("SKIP_DUNGEON_QUESTS_OPTION_OK", out)
 
     def test_deployed_addon_matches_source_directory(self) -> None:
         self.assertTrue(ADDON_DST.exists(), f"Installed addon directory missing: {ADDON_DST}")

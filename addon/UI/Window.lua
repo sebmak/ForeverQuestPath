@@ -7,9 +7,9 @@
 --      [Chain X/Y] tags, and Ready Turn-Ins counter), 5-Weight Balance
 --      Sliders, Max Quest Level Offset Slider (-3..+5, default +2) with
 --      prevNonRedMaxLevelOffset preservation across Allow Red (+5) toggles,
---      Multi-Race/Class Selector, Auto-Reorder (GPS), Skip Elite (Solo) &
---      Skinning/LW Toggles, Dungeon Unlocks & Special Rewards, and
---      Diagnostics/Settings window (/fqp).
+--      Multi-Race/Class Selector, Auto-Reorder (GPS), Skip Elite (Solo),
+--      Skip Dungeons & Skinning/LW Toggles, Dungeon Unlocks & Special Rewards,
+--      and Diagnostics/Settings window (/fqp).
 --   2. Uses fixed-viewport pooled ScrollFrame + vertical Slider lists (<= 22
 --      row frames per list, O(1) frame allocation), pooled baseRowPool and
 --      overlayRowPool row descriptor reuse across rebuilds, preservation of
@@ -528,6 +528,7 @@ function Window.GetSnapshot()
         readyTurnInCount = ns.State.GetReadyTurnInCount and ns.State.GetReadyTurnInCount() or 0,
         locationReorder = (toggles.locationReorder ~= false),
         skipEliteSolo = (toggles.skipEliteSolo ~= false),
+        skipDungeons = (toggles.skipDungeons ~= false),
         inGroup = (player and player.inGroup == true),
         locationPlanMode = meta and meta.locationPlan and meta.locationPlan.mode or nil,
         routeRows = (rCache and rCache.displayList) or {},
@@ -974,6 +975,9 @@ local function IsStepAlwaysNonActionableRem(s)
     if rs.ctxSkipEliteNow and (nAct ~= "DUNGEON_PREP" and nAct ~= "DUNGEON_RUN") and nq.isGroup == true and not nq.isDungeon then
         return true
     end
+    if rs.ctxSkipDungeonsNow and (nAct == "DUNGEON_PREP" or nAct == "DUNGEON_RUN" or nq.isDungeon == true) then
+        return true
+    end
     if type(s.expectedLevel) == "number" then
         local pLv = rs.ctxPLv
         local isDung = (nq.isDungeon == true) or (nAct == "DUNGEON_RUN")
@@ -1141,11 +1145,13 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                     if (routeFilter == "all") or ((not isSuppressed) and (not done)) then
                         local isEliteSkip = rs.ctxSkipEliteNow and (stAct ~= "DUNGEON_PREP" and stAct ~= "DUNGEON_RUN")
                             and (not q.isDungeon) and ((q.isGroup == true) or (actE ~= nil and actE.isElite == true))
+                        local isDungSkip = rs.ctxSkipDungeonsNow and ((stAct == "DUNGEON_PREP" or stAct == "DUNGEON_RUN")
+                            or (q.isDungeon == true) or (actE ~= nil and actE.isDungeon == true))
                         local isActReady = (actE ~= nil and actE.isComplete == true)
                         if isDoneQ then
                             blockCode, blockReason = nil, nil
-                        elseif isEliteSkip and (actE ~= nil or vActive[qid]) and (not isActReady) then
-                            blockCode, blockReason = "elite_solo", nil
+                        elseif (isEliteSkip or isDungSkip) and (actE ~= nil or vActive[qid]) and (not isActReady) then
+                            blockCode, blockReason = isEliteSkip and "elite_solo" or "dungeon_skipped", nil
                         elseif (actE ~= nil) or simCompleted[qid] or vActive[qid] then
                             blockCode, blockReason = nil, nil
                         elseif (routeFilter ~= "all") and (not hasQdbGlobal) and (not q.requiredSkill) then
@@ -1160,6 +1166,8 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                                 blockCode = "quest_level_too_high"
                             elseif isEliteSkip then
                                 blockCode = "elite_solo"
+                            elseif isDungSkip then
+                                blockCode = "dungeon_skipped"
                             elseif q.prereqIds and #q.prereqIds > 0 then
                                 local pids = q.prereqIds
                                 if q.prereqMode == "any" then
@@ -1294,10 +1302,12 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                                 if nSingle then
                                     local nEliteSkip = rs.ctxSkipEliteNow and (nAct ~= "DUNGEON_PREP" and nAct ~= "DUNGEON_RUN")
                                         and (not nq.isDungeon) and ((nq.isGroup == true) or (nActE ~= nil and nActE.isElite == true))
+                                    local nDungSkip = rs.ctxSkipDungeonsNow and ((nAct == "DUNGEON_PREP" or nAct == "DUNGEON_RUN")
+                                        or (nq.isDungeon == true) or (nActE ~= nil and nActE.isDungeon == true))
                                     local nActReady = (nActE ~= nil and nActE.isComplete == true)
                                     if nDoneQ then
                                         nsBlocked = false
-                                    elseif nEliteSkip and (nActE ~= nil or vActive[nqid]) and (not nActReady) then
+                                    elseif (nEliteSkip or nDungSkip) and (nActE ~= nil or vActive[nqid]) and (not nActReady) then
                                         nsBlocked = true
                                     elseif (nActE ~= nil) or simCompleted[nqid] or vActive[nqid] then
                                         nsBlocked = false
@@ -1308,7 +1318,7 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                                             nsBlocked = true
                                         elseif (tonumber(nq.minLevel) or 1) > pLv or (tonumber(nq.questLevel) or 0) > maxQuestLv then
                                             nsBlocked = true
-                                        elseif nEliteSkip then
+                                        elseif nEliteSkip or nDungSkip then
                                             nsBlocked = true
                                         elseif nq.prereqIds and #nq.prereqIds > 0 then
                                             local pids = nq.prereqIds
@@ -1484,8 +1494,9 @@ ComputeRouteTabCache = function(playerHint)
         tostring(locSecond and (locSecond.gpsStepKey or locSecond.origRouteIdx or locSecond.questId or locSecond.title) or ""))
     local cursorIdx = tonumber(meta and meta.stepIndex) or tonumber(ns.charDB and ns.charDB.stepIndex) or 1
     local skipEliteNow = (ns.State.ShouldSkipEliteNow and ns.State.ShouldSkipEliteNow(player, t)) or (t.skipEliteSolo ~= false and not (player and player.inGroup))
+    routeScratch.ctxSkipDungeonsNow = (ns.State.ShouldSkipDungeonsNow and ns.State.ShouldSkipDungeonsNow(t)) or (t.skipDungeons ~= false)
     local baseZoneKey = (routeFilter == "zone" or routeReadyCount > 0) and tostring(player.zoneId or 0) or "any"
-    local baseKey = string.format("%d:%s:%s:%s:%s:%s:%s:%d:%s:%d:%d:%s:%d:%d:%s",
+    local baseKey = string.format("%d:%s:%s:%s:%s:%s:%s:%d:%s:%d:%d:%s:%d:%d:%s:%s",
         routeStaticSeq,
         tostring(activeKey),
         tostring(isDynamic),
@@ -1500,7 +1511,8 @@ ComputeRouteTabCache = function(playerHint)
         routeReadySig,
         cursorIdx,
         dbQuestGen,
-        tostring(skipEliteNow))
+        tostring(skipEliteNow),
+        tostring(routeScratch.ctxSkipDungeonsNow))
     local cacheKey = string.format("%s:%d:%s:%s:%s",
         baseKey,
         questGen,
@@ -1644,7 +1656,7 @@ ComputeRouteTabCache = function(playerHint)
                 local hIsChain = nil
                 local hCount = 0
                 if useHorizon then
-                    local horizonKey = string.format("%d:%s:%d:%s:%d:%d:%s:%d:%s:%d:%s:%s:%s",
+                    local horizonKey = string.format("%d:%s:%d:%s:%d:%d:%s:%d:%s:%d:%s:%s:%s:%s",
                         routeStaticSeq,
                         tostring(pkey),
                         pLv,
@@ -1657,7 +1669,8 @@ ComputeRouteTabCache = function(playerHint)
                         tonumber(player.classId) or 0,
                         tostring(locFrozen),
                         tostring(hasSkipped),
-                        tostring(skipEliteNow))
+                        tostring(skipEliteNow),
+                        tostring(routeScratch.ctxSkipDungeonsNow))
                     hIndices = remainingHorizonCache.indices
                     hSafeElig = remainingHorizonCache.safeElig
                     hQids = remainingHorizonCache.qids
@@ -1764,6 +1777,7 @@ ComputeRouteTabCache = function(playerHint)
                                                 local cqLevel = tonumber(cq.questLevel) or 0
                                                 local eliteSkipped = skipEliteNow and (cAct ~= "DUNGEON_PREP" and cAct ~= "DUNGEON_RUN") and (cq.isGroup == true and not cq.isDungeon)
                                                 local cAlwaysBlocked = (cqLevel > absMaxQuestLv) or (not minLvOk) or (not eligOk) or eliteSkipped
+                                                    or (routeScratch.ctxSkipDungeonsNow and (cAct == "DUNGEON_PREP" or cAct == "DUNGEON_RUN" or cq.isDungeon == true))
                                                 if cOutleveled or cAlwaysBlocked then
                                                     keep = false
                                                     if cAct == "ACCEPT" or (cAct == "DUNGEON_PREP" and cst.prepMode == "accept") then
@@ -2297,6 +2311,8 @@ local function RefreshRouteTab(playerHint)
     toggleChecks.auto:SetChecked(t.autoAdvance ~= false)
     if toggleChecks.elite then toggleChecks.elite:SetChecked(t.skipEliteSolo ~= false) end
     if wpChecks.skipEliteSolo then wpChecks.skipEliteSolo:SetChecked(t.skipEliteSolo ~= false) end
+    if toggleChecks.skipDungeons then toggleChecks.skipDungeons:SetChecked(t.skipDungeons ~= false) end
+    if wpChecks.skipDungeons then wpChecks.skipDungeons:SetChecked(t.skipDungeons ~= false) end
     if toggleChecks.skinning then toggleChecks.skinning:SetChecked(prof.hasSkinning == true) end
     if toggleChecks.lw then toggleChecks.lw:SetChecked(prof.hasLeatherworking == true) end
     if toggleChecks.prioritizeProf then toggleChecks.prioritizeProf:SetChecked(t.prioritizeSkinningLW ~= false) end
@@ -2501,6 +2517,12 @@ local function RefreshDiagTab()
     if toggleChecks.elite then
         toggleChecks.elite:SetChecked(toggles.skipEliteSolo ~= false)
     end
+    if wpChecks.skipDungeons then
+        wpChecks.skipDungeons:SetChecked(toggles.skipDungeons ~= false)
+    end
+    if toggleChecks.skipDungeons then
+        toggleChecks.skipDungeons:SetChecked(toggles.skipDungeons ~= false)
+    end
 
     local gen = ns.State.GetRefreshGeneration and ns.State.GetRefreshGeneration() or 0
     local player = ns.State.GetPlayerInfo()
@@ -2510,7 +2532,7 @@ local function RefreshDiagTab()
     local locSig = ns.State.GetLocationPlanSignature and ns.State.GetLocationPlanSignature() or ""
     local qx = player.x and math.floor(player.x * 0.5) or -1
     local qy = player.y and math.floor(player.y * 0.5) or -1
-    local diagKey = string.format("%d:%d:%s:%s:%s:%d:%s:%s:%s:%d:%s:%s:%s:%s:%s:%s:%s:%d:%d",
+    local diagKey = string.format("%d:%d:%s:%s:%s:%d:%s:%s:%s:%d:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d",
         gen,
         player.level or 24,
         tostring(player.zoneId or 0),
@@ -2525,6 +2547,7 @@ local function RefreshDiagTab()
         tostring(toggles.autoDetectChar ~= false),
         tostring(toggles.locationReorder ~= false),
         tostring(toggles.skipEliteSolo ~= false),
+        tostring(toggles.skipDungeons ~= false),
         tostring(player.inGroup == true),
         readySig,
         locSig,
@@ -2541,6 +2564,7 @@ local function RefreshDiagTab()
         integrations[#integrations + 1] = "LW:" .. (player.hasLeatherworking and (player.leatherworkingRank and tostring(player.leatherworkingRank) or "|cff33ff99Yes|r") or "|cff888888No|r")
         integrations[#integrations + 1] = "GPS:" .. ((toggles.locationReorder ~= false) and "|cff33ff99On|r" or "|cff888888Off|r")
         integrations[#integrations + 1] = "Elite:" .. ((player.inGroup == true) and "|cff33ff99Group|r" or ((toggles.skipEliteSolo ~= false) and "|cffffd200SkipSolo|r" or "|cff888888All|r"))
+        integrations[#integrations + 1] = "Dung:" .. ((toggles.skipDungeons ~= false) and "|cffffd200Skip|r" or "|cff33ff99All|r")
         integrations[#integrations + 1] = "Guarded:" .. tostring(#blocked)
         if readyCount > 0 then
             integrations[#integrations + 1] = "Ready:" .. tostring(readyCount)
@@ -2832,17 +2856,19 @@ local function CreateWindowFrame()
     toggleChecks.auto:SetPoint("TOPLEFT", 506, -48)
     toggleChecks.elite:SetPoint("TOPLEFT", 620, -48)
 
-    toggleChecks.skinning       = MakeCheckbox(balBox, "Have Skinning", 124, ToggleProfOpt("hasSkinning"))
-    toggleChecks.lw             = MakeCheckbox(balBox, "Have Leatherworking", 152, ToggleProfOpt("hasLeatherworking"))
-    toggleChecks.prioritizeProf = MakeCheckbox(balBox, "Prioritize Skin/LW", 138, ToggleOpt("prioritizeSkinningLW"))
-    toggleChecks.autoDetectProf = MakeCheckbox(balBox, "Auto-Detect Profs", 142, ToggleOpt("autoDetectProfessions"))
-    toggleChecks.gps            = MakeCheckbox(balBox, "Auto-Reorder (GPS)", 130, ToggleOpt("locationReorder"))
+    toggleChecks.skinning       = MakeCheckbox(balBox, "Have Skinning", 104, ToggleProfOpt("hasSkinning"))
+    toggleChecks.lw             = MakeCheckbox(balBox, "Have Leatherworking", 136, ToggleProfOpt("hasLeatherworking"))
+    toggleChecks.prioritizeProf = MakeCheckbox(balBox, "Prioritize Skin/LW", 122, ToggleOpt("prioritizeSkinningLW"))
+    toggleChecks.autoDetectProf = MakeCheckbox(balBox, "Auto-Detect Profs", 120, ToggleOpt("autoDetectProfessions"))
+    toggleChecks.gps            = MakeCheckbox(balBox, "Auto-Reorder (GPS)", 126, ToggleOpt("locationReorder"))
+    toggleChecks.skipDungeons   = MakeCheckbox(balBox, "Skip Dungeons", 106, ToggleOpt("skipDungeons"))
 
     toggleChecks.skinning:SetPoint("TOPLEFT", 10, -70)
-    toggleChecks.lw:SetPoint("TOPLEFT", 144, -70)
-    toggleChecks.prioritizeProf:SetPoint("TOPLEFT", 306, -70)
-    toggleChecks.autoDetectProf:SetPoint("TOPLEFT", 454, -70)
-    toggleChecks.gps:SetPoint("TOPLEFT", 602, -70)
+    toggleChecks.lw:SetPoint("TOPLEFT", 116, -70)
+    toggleChecks.prioritizeProf:SetPoint("TOPLEFT", 254, -70)
+    toggleChecks.autoDetectProf:SetPoint("TOPLEFT", 378, -70)
+    toggleChecks.gps:SetPoint("TOPLEFT", 500, -70)
+    toggleChecks.skipDungeons:SetPoint("TOPLEFT", 628, -70)
 
     pRoute.filterRem  = MakeButton(balBox, "Upcoming", 80, 20)
     pRoute.filterAll  = MakeButton(balBox, "All Steps", 76, 20)
@@ -2963,7 +2989,7 @@ local function CreateWindowFrame()
     local setBox = CreateFrame("Frame", nil, pDiag, "BackdropTemplate")
     setBox:SetPoint("TOPLEFT", 0, 0)
     setBox:SetPoint("TOPRIGHT", 0, 0)
-    setBox:SetHeight(98)
+    setBox:SetHeight(122)
     ApplyBackdrop(setBox, 0.08, 0.10, 0.13, 0.9, 0.20, 0.25, 0.32, 1)
 
     wpChecks.autoWp = MakeCheckbox(setBox, "Auto-Set Waypoint on Step Change", 230, function(v) ns.db.autoWaypoint = v end)
@@ -2986,7 +3012,7 @@ local function CreateWindowFrame()
     wpChecks.hud:SetPoint("TOPLEFT", 480, -34)
 
     local clrWpBtn = MakeButton(setBox, "Clear Waypoints", 110, 22)
-    clrWpBtn:SetPoint("BOTTOMLEFT", 10, 8)
+    clrWpBtn:SetPoint("TOPLEFT", 10, -60)
     clrWpBtn:SetScript("OnClick", function()
         if ns.Waypoint and ns.Waypoint.Clear then ns.Waypoint.Clear() end
         ns.Print("Cleared active waypoints.")
@@ -3004,7 +3030,7 @@ local function CreateWindowFrame()
             ns.State.Refresh("GUARD_TOGGLED")
         end
     end)
-    wpChecks.consultQuestie:SetPoint("LEFT", resyncBtn, "RIGHT", 8, 0)
+    wpChecks.consultQuestie:SetPoint("BOTTOMLEFT", 10, 6)
 
     wpChecks.allowRedQuests = MakeCheckbox(setBox, "Allow Red (+5) Quests", 156, function(v)
         if ns.State and ns.State.SetMaxLevelOffset then
@@ -3034,6 +3060,14 @@ local function CreateWindowFrame()
     end)
     wpChecks.skipEliteSolo:SetPoint("LEFT", wpChecks.allowRedQuests, "RIGHT", 6, 0)
 
+    wpChecks.skipDungeons = MakeCheckbox(setBox, "Skip Dungeons", 118, function(v)
+        if ns.charDB and ns.charDB.toggles then
+            ns.charDB.toggles.skipDungeons = v
+            ns.State.Refresh("TOGGLE_skipDungeons")
+        end
+    end)
+    wpChecks.skipDungeons:SetPoint("LEFT", wpChecks.skipEliteSolo, "RIGHT", 6, 0)
+
     pDiag.infoText = pDiag:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     pDiag.infoText:SetPoint("TOPLEFT", setBox, "BOTTOMLEFT", 0, -10)
     pDiag.infoText:SetPoint("TOPRIGHT", setBox, "BOTTOMRIGHT", 0, -10)
@@ -3043,7 +3077,7 @@ local function CreateWindowFrame()
     diagTitle:SetPoint("TOPLEFT", pDiag.infoText, "BOTTOMLEFT", 0, -10)
     diagTitle:SetText("|cff99bbccGuard Log (Blocked Steps) & Live Re-Scorer Candidate Ranking|r")
 
-    pDiag.diagList = MakeScrollList(pDiag, WIN_W - 2 * PAD, 310, 26, 14, CreateDiagRow, BindDiagRow)
+    pDiag.diagList = MakeScrollList(pDiag, WIN_W - 2 * PAD, 286, 26, 14, CreateDiagRow, BindDiagRow)
     pDiag.diagList:SetPoint("TOPLEFT", diagTitle, "BOTTOMLEFT", 0, -6)
 
     frame:Hide()

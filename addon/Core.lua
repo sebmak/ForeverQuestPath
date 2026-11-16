@@ -10,9 +10,11 @@
 --      distinct event categories), PLAYER_DEAD / PLAYER_ALIVE / PLAYER_UNGHOST
 --      dead/ghost location gating & resurrection resume, change-gated
 --      GROUP_ROSTER_UPDATE / PARTY_MEMBERS_CHANGED / RAID_ROSTER_UPDATE group
---      tracking (supporting solo elite skipping via toggles.skipEliteSolo),
---      TAXIMAP_OPENED change-gated flight-master recording, /fqp gate toggle,
---      /fqp elite toggle, /fqp gps stats telemetry, and slash commands.
+--      tracking (supporting solo elite skipping via toggles.skipEliteSolo and
+--      dungeon quest deferral via toggles.skipDungeons), TAXIMAP_OPENED
+--      change-gated flight-master recording, /fqp gate toggle, /fqp elite
+--      toggle, /fqp skipdungeons (/fqp dungeons skip|allow|toggle), /fqp gps
+--      stats telemetry, and slash commands.
 --   2. Must tolerate missing optional addons (TomTom, OpenMap, Questie,
 --      ForeverLevelingBiS) and missing/partial GeneratedData safely.
 --   3. Keep all Lua compatible with WoW Forever 1.60.1 (Lua 5.1 semantics)
@@ -27,7 +29,7 @@ end
 addonName = addonName or "ForeverQuestPath"
 
 ns.name = addonName
-ns.version = "1.1.0"
+ns.version = "1.2.0"
 ns.PREFIX = "|cff33d9ffForeverQuestPath|r: "
 
 _G.ForeverQuestPath = ns
@@ -77,6 +79,7 @@ local DEFAULT_CHAR_DB = {
         consultQuestie = true,
         allowRedQuests = false,
         skipEliteSolo = true,
+        skipDungeons = true,
     },
     overrideRace = nil,
     overrideClass = nil,
@@ -765,8 +768,41 @@ function ns.HandleSlashCommand(rawMsg)
         local sign = (applied >= 0) and "+" or ""
         ns.Printf("Max Quest Level Offset set to %s%d (<= Lv %d).", sign, applied, pLv + applied)
     elseif cmd == "dungeons" then
-        if ns.Window and ns.Window.ShowTab then
+        if (rest == "skip" or rest == "allow" or rest == "show" or rest == "include" or rest == "toggle" or rest == "on" or rest == "off" or rest == "hide")
+            and ns.charDB and ns.charDB.toggles then
+            local toggles = ns.charDB.toggles
+            local newVal
+            if rest == "skip" or rest == "on" or rest == "hide" then
+                newVal = true
+            elseif rest == "allow" or rest == "show" or rest == "include" or rest == "off" then
+                newVal = false
+            else
+                newVal = not (toggles.skipDungeons ~= false)
+            end
+            toggles.skipDungeons = newVal
+            if ns.State and ns.State.Refresh then
+                ns.State.Refresh("TOGGLE_skipDungeons")
+            end
+            ns.Print("Skip Dungeons: " .. (newVal and "ON (dungeon quests deferred)" or "OFF (dungeon quests active)"))
+        elseif ns.Window and ns.Window.ShowTab then
             ns.Window.ShowTab("dungeons")
+        end
+    elseif cmd == "skipdungeons" or cmd == "skipdungeon" or cmd == "nodungeons" then
+        if ns.charDB and ns.charDB.toggles then
+            local toggles = ns.charDB.toggles
+            local newVal
+            if rest == "on" or rest == "skip" or rest == "1" or rest == "true" then
+                newVal = true
+            elseif rest == "off" or rest == "allow" or rest == "show" or rest == "0" or rest == "false" then
+                newVal = false
+            else
+                newVal = not (toggles.skipDungeons ~= false)
+            end
+            toggles.skipDungeons = newVal
+            if ns.State and ns.State.Refresh then
+                ns.State.Refresh("TOGGLE_skipDungeons")
+            end
+            ns.Print("Skip Dungeons: " .. (newVal and "ON (dungeon quests deferred)" or "OFF (dungeon quests active)"))
         end
     elseif cmd == "rewards" then
         if ns.Window and ns.Window.ShowTab then
@@ -806,7 +842,7 @@ function ns.HandleSlashCommand(rawMsg)
                 .. (inGroup and " (currently IN GROUP - elite quests included)" or " (currently SOLO)"))
         end
     else
-        ns.Print("Commands: /fqp (window), /fqp hud, /fqp pin, /fqp elite [on|off|toggle], /fqp gate [on|off], /fqp gps [on|off|toggle|stats], /fqp skip, /fqp back, /fqp reset, /fqp dungeons, /fqp rewards, /fqp maxlevel <-3..+5>, /fqp char <auto|race class>, /fqp profile <balanced|skinning_lw|dungeon_focus|treasure_bags|fast_xp>")
+        ns.Print("Commands: /fqp (window), /fqp hud, /fqp pin, /fqp elite [on|off|toggle], /fqp skipdungeons [on|off|toggle], /fqp gate [on|off], /fqp gps [on|off|toggle|stats], /fqp skip, /fqp back, /fqp reset, /fqp dungeons [skip|allow|toggle], /fqp rewards, /fqp maxlevel <-3..+5>, /fqp char <auto|race class>, /fqp profile <balanced|skinning_lw|dungeon_focus|treasure_bags|fast_xp>")
     end
 end
 

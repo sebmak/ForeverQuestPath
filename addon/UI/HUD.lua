@@ -3,10 +3,10 @@
 -- Rules:
 --   1. Compact, movable HUD Tracker displaying the Next Step card (action,
 --      quest/target, NPC & coords, travel note, XP/Gold/Bag/<Class> BiS/Skin/LW/
---      Elite/Ready Turn-In/Friend Chain/GPS Reorder/Chain Progress badges, "Why
---      this step?"), active MaxLv cap, GPS status, Grouped/No Elite/Elite All
---      indicator, Ready Turn-Ins counter, Skip / Back / Reset / Pin buttons, and
---      5 Upcoming Steps with Chain tags.
+--      Elite/Dungeon/Ready Turn-In/Friend Chain/GPS Reorder/Chain Progress
+--      badges, "Why this step?"), active MaxLv cap, GPS status, Grouped/No
+--      Elite/Elite All + No Dung/Dung On indicator, Ready Turn-Ins counter,
+--      Skip / Back / Reset / Pin buttons, and 5 Upcoming Steps with Chain tags.
 --   2. Reuses pooled row widgets; never leaks frames across refreshes.
 --   3. Separates view-model computation (HUD.GetViewModel, forwarding
 --      player into State.GetCurrentStep) from frame updates so both in-game
@@ -117,6 +117,10 @@ local function FormatBadges(step, player)
     end
     local qid = step.questId or (type(step.questIds) == "table" and step.questIds[1]) or nil
     local isDungeonStep = (step.isDungeon == true) or (step.action == "DUNGEON_PREP") or (step.action == "DUNGEON_RUN")
+    if (step.action ~= "DUNGEON_PREP" and step.action ~= "DUNGEON_RUN")
+        and (step.isDungeon == true or (qid and ns.State and ns.State.IsQuestDungeon and ns.State.IsQuestDungeon(qid))) then
+        parts[#parts + 1] = "|cffff944d[Dungeon]|r"
+    end
     if (not isDungeonStep) and (b.isElite or step.isElite or step.isGroup or (qid and ns.State and ns.State.IsQuestElite and ns.State.IsQuestElite(qid))) then
         parts[#parts + 1] = "|cffffaa33[Elite]|r"
     end
@@ -188,7 +192,9 @@ function HUD.GetViewModel()
     end
     local inGroup = (player and player.inGroup == true)
     local skipEliteSolo = not (cdb.toggles and cdb.toggles.skipEliteSolo == false)
+    local skipDungeons = not (cdb.toggles and cdb.toggles.skipDungeons == false)
     local eliteSuffix = inGroup and " · Grouped" or (skipEliteSolo and " · No Elite" or " · Elite All")
+    local dungSuffix = skipDungeons and " · No Dung" or " · Dung On"
     local modeLabel = ((cdb.toggles and cdb.toggles.dynamicRescore)
         and (ns.GetPresetLabel(cdb.activeProfile or "custom") .. " · Live")
         or ns.GetPresetLabel(cdb.activeProfile or "balanced"))
@@ -196,6 +202,7 @@ function HUD.GetViewModel()
         .. readySuffix
         .. gpsSuffix
         .. eliteSuffix
+        .. dungSuffix
 
     local charTag = string.format("%s %s%s", player.raceName or "Gnome", player.className or "Rogue", player.isCharOverride and "*" or "")
     local vm = {
@@ -204,6 +211,7 @@ function HUD.GetViewModel()
         readyTurnInCount = readyCount,
         inGroup = inGroup,
         skipEliteSolo = skipEliteSolo,
+        skipDungeons = skipDungeons,
         meta = meta,
         deviation = deviation,
         current = nil,
