@@ -8,10 +8,13 @@
 --      Elite/Elite All + No Dung/Dung On indicator, Ready Turn-Ins counter,
 --      Skip / Back / Reset / Pin buttons, and 5 Upcoming Steps with Chain tags.
 --   2. Reuses pooled row widgets; never leaks frames across refreshes.
---   3. Separates view-model computation (HUD.GetViewModel, forwarding
+--   3. Shows full quest info/instructions tooltips on hover over the Next Step
+--      card and Upcoming Steps (via UI/QuestInfo.lua), opens the Quest Log to
+--      the quest on Left-Click, and pins the step waypoint on Right-Click.
+--   4. Separates view-model computation (HUD.GetViewModel, forwarding
 --      player into State.GetCurrentStep) from frame updates so both in-game
 --      rendering and headless Lua tests remain deterministic.
---   4. Enriches the current step with live Nav shortest-path ETA & next-hop
+--   5. Enriches the current step with live Nav shortest-path ETA & next-hop
 --      gate/pass/transport summary without mutating static GeneratedData steps
 --      (skipping live Nav hop resolution while frozen on taxi or dead/ghost).
 --------------------------------------------------------------------------------
@@ -28,6 +31,7 @@ local UPCOMING_COUNT = 5
 local frame = nil
 local collapsed = false
 local upcomingRows = {}
+local currentStep = nil
 
 local function ApplyBackdrop(f, r, g, b, a, br, bg, bb, ba)
     if f and f.SetBackdrop then
@@ -339,6 +343,19 @@ local function UpdateLockVisual()
     frame:SetMovable(not locked)
 end
 
+local function StartHUDMove()
+    if frame and not (ns.db and ns.db.hudLocked) and frame.StartMoving then
+        frame:StartMoving()
+    end
+end
+
+local function StopHUDMove()
+    if frame and frame.StopMovingOrSizing then
+        frame:StopMovingOrSizing()
+    end
+    SavePosition()
+end
+
 local function CreateHUDFrame()
     if frame or not CreateFrame then return end
 
@@ -358,17 +375,8 @@ local function CreateHUDFrame()
         frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -36, -180)
     end
 
-    frame:SetScript("OnDragStart", function(self)
-        if not (ns.db and ns.db.hudLocked) and self.StartMoving then
-            self:StartMoving()
-        end
-    end)
-    frame:SetScript("OnDragStop", function(self)
-        if self.StopMovingOrSizing then
-            self:StopMovingOrSizing()
-        end
-        SavePosition()
-    end)
+    frame:SetScript("OnDragStart", StartHUDMove)
+    frame:SetScript("OnDragStop", StopHUDMove)
 
     -- Header bar
     local header = CreateFrame("Frame", nil, frame, "BackdropTemplate")
@@ -425,11 +433,47 @@ local function CreateHUDFrame()
     frame.modeLine = modeLine
 
     -- Next Step Card
-    local card = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    local card = CreateFrame("Button", nil, frame, "BackdropTemplate")
     card:SetPoint("TOPLEFT", modeLine, "BOTTOMLEFT", 0, -6)
     card:SetPoint("RIGHT", frame, "RIGHT", -PAD, 0)
     card:SetHeight(112)
     ApplyBackdrop(card, 0.09, 0.11, 0.15, 0.95, 0.25, 0.35, 0.45, 1)
+    local cardHl = card:CreateTexture(nil, "HIGHLIGHT")
+    cardHl:SetAllPoints()
+    if cardHl.SetColorTexture then
+        cardHl:SetColorTexture(1, 1, 1, 0.05)
+    end
+    card:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    card:RegisterForDrag("LeftButton")
+    card:SetScript("OnDragStart", StartHUDMove)
+    card:SetScript("OnDragStop", StopHUDMove)
+    card:SetScript("OnEnter", function(self)
+        if currentStep and ns.QuestInfo then
+            ns.QuestInfo.ShowTooltip(self, {
+                step = currentStep,
+                rightClickHint = "Right-Click: Pin Waypoint",
+            })
+        end
+    end)
+    card:SetScript("OnLeave", function(self)
+        if ns.QuestInfo then
+            ns.QuestInfo.HideTooltip(self)
+        end
+    end)
+    card:SetScript("OnClick", function(_, button)
+        if not currentStep then return end
+        if button == "RightButton" then
+            if ns.Waypoint and ns.Waypoint.SyncToCurrentStep then
+                ns.Waypoint.SyncToCurrentStep(true, false)
+            end
+            return
+        end
+        if ns.QuestInfo and ns.QuestInfo.ResolvePrimaryQuestId and ns.QuestInfo.ResolvePrimaryQuestId(nil, currentStep) then
+            ns.QuestInfo.OpenQuestInLog(nil, currentStep)
+        elseif ns.Waypoint and ns.Waypoint.SyncToCurrentStep then
+            ns.Waypoint.SyncToCurrentStep(true, false)
+        end
+    end)
     frame.card = card
 
     local stepTitle = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -533,8 +577,31 @@ local function CreateHUDFrame()
         row.right:SetJustifyH("RIGHT")
         if row.right.SetWordWrap then row.right:SetWordWrap(false) end
 
-        row:SetScript("OnClick", function(self)
-            if self.step and ns.Waypoint and ns.Waypoint.SetForStep then
+        row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        row:SetScript("OnEnter", function(self)
+            if self.step and ns.QuestInfo then
+                ns.QuestInfo.ShowTooltip(self, {
+                    step = self.step,
+                    rightClickHint = "Right-Click: Pin Waypoint",
+                })
+            end
+        end)
+        row:SetScript("OnLeave", function(self)
+            if ns.QuestInfo then
+                ns.QuestInfo.HideTooltip(self)
+            end
+        end)
+        row:SetScript("OnClick", function(self, button)
+            if not self.step then return end
+            if button == "RightButton" then
+                if ns.Waypoint and ns.Waypoint.SetForStep then
+                    ns.Waypoint.SetForStep(self.step, { announce = true })
+                end
+                return
+            end
+            if ns.QuestInfo and ns.QuestInfo.ResolvePrimaryQuestId and ns.QuestInfo.ResolvePrimaryQuestId(nil, self.step) then
+                ns.QuestInfo.OpenQuestInLog(nil, self.step)
+            elseif ns.Waypoint and ns.Waypoint.SetForStep then
                 ns.Waypoint.SetForStep(self.step, { announce = true })
             end
         end)
@@ -546,6 +613,7 @@ end
 
 function HUD.Refresh()
     local vm = HUD.GetViewModel()
+    currentStep = vm and vm.current and vm.current.step or nil
     if not frame then return vm end
 
     frame.statusLine:SetText(vm.playerLine)

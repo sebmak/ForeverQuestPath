@@ -1,8 +1,9 @@
 -- Mock WoW Forever (Interface 16001, build 1.60.1) Lua 5.1 / LuaJIT test harness.
 -- Provides faithful client globals, C_QuestLog, C_Map, C_SuperTrack, UiMapPoint,
--- Frame/Widget APIs, SavedVariables lifecycle, .toc loader, group/raid APIs
--- (IsInGroup, IsInRaid, GetNumGroupMembers, GetNumPartyMembers, GetNumRaidMembers,
--- Mock.SetGroup), and TomTom/OpenMap mocks.
+-- WorldMapFrame.QuestLog, QuestMapFrame_OpenToQuestDetails, GameTooltip (IsOwned/
+-- AddLine/AddDoubleLine), GetQuestLogQuestText, Frame/Widget APIs, SavedVariables
+-- lifecycle, .toc loader, group/raid APIs (IsInGroup, IsInRaid, GetNumGroupMembers,
+-- GetNumPartyMembers, GetNumRaidMembers, Mock.SetGroup), and TomTom/OpenMap mocks.
 
 local M = {}
 
@@ -153,8 +154,9 @@ M.state = {
     tickers = {},
     taxiNodes = {},
     completedQuests = {},
-    questLog = {}, -- array of { questID, title, level, isComplete, isFailed, isHeader, objectives, tagName }
+    questLog = {}, -- array of { questID, title, level, isComplete, isFailed, isHeader, objectives, tagName, description, objectivesText }
     selectedQuestID = nil,
+    openedQuestDetailsID = nil,
     userWaypoint = nil,
     superTrackedUserWaypoint = false,
     superTrackedQuestID = 0,
@@ -656,6 +658,7 @@ function M.Reset(opts)
     M.state.completedQuests = {}
     M.state.questLog = {}
     M.state.selectedQuestID = nil
+    M.state.openedQuestDetailsID = nil
     M.state.userWaypoint = nil
     M.state.superTrackedUserWaypoint = false
     M.state.superTrackedQuestID = 0
@@ -684,15 +687,34 @@ function M.Reset(opts)
     _G.WorldMapFrame = create_frame("Frame", "WorldMapFrame", _G.UIParent)
     _G.WorldMapFrame:Hide()
     _G.WorldMapFrame.ScrollContainer = create_frame("Frame", nil, _G.WorldMapFrame)
+    _G.WorldMapFrame.QuestLog = create_frame("Frame", nil, _G.WorldMapFrame)
+    _G.WorldMapFrame.QuestLog:Hide()
+    function _G.WorldMapFrame:HandleUserActionOpenSidePanel()
+        if self.QuestLog then self.QuestLog:Show() end
+    end
     function _G.WorldMapFrame:SetMapID(id) M.state.openedMapID = id end
     function _G.WorldMapFrame:GetMapID() return M.state.openedMapID or M.state.character.mapId end
+    _G.QuestMapFrame_ShowQuestDetails = function(questID)
+        M.state.openedQuestDetailsID = questID
+        M.state.selectedQuestID = questID
+        if _G.WorldMapFrame and _G.WorldMapFrame.QuestLog then
+            _G.WorldMapFrame.QuestLog:Show()
+        end
+    end
+    _G.QuestMapFrame_OpenToQuestDetails = function(questID)
+        if _G.WorldMapFrame then _G.WorldMapFrame:Show() end
+        _G.QuestMapFrame_ShowQuestDetails(questID)
+    end
     _G.CharacterFrame = create_frame("Frame", "CharacterFrame", _G.UIParent)
     _G.UISpecialFrames = {}
 
     local function make_tooltip(name)
         local tt = create_frame("GameTooltip", name, _G.UIParent, "BackdropTemplate")
         tt._lines = {}
-        function tt:SetOwner(owner, anchor) self._owner = owner; self._anchor = anchor; self._lines = {} end
+        tt._shown = false
+        function tt:SetOwner(owner, anchor) self._owner = owner; self._anchor = anchor; self._lines = {}; self._shown = true end
+        function tt:IsOwned(owner) return self._shown and self._owner == owner end
+        function tt:Hide() self._shown = false; self._owner = nil end
         function tt:ClearLines() self._lines = {} end
         function tt:AddLine(text, r, g, b, wrap) table.insert(self._lines, { text = text, r = r, g = g, b = b, wrap = wrap }) end
         function tt:AddDoubleLine(l, r, ...) table.insert(self._lines, { left = l, right = r }) end
@@ -1028,6 +1050,13 @@ function M.Reset(opts)
         GetSelectedQuest = function()
             return M.state.selectedQuestID
         end,
+        GetTitleForQuestID = function(qid)
+            for _, e in ipairs(M.state.questLog) do
+                if e.questID == qid then return e.title end
+            end
+            return nil
+        end,
+        RequestLoadQuestByID = function(qid) end,
         GetTrivialRange = function() return 5 end,
         GetMaxNumQuestsCanAccept = function() return 20 end,
     }
@@ -1046,6 +1075,17 @@ function M.Reset(opts)
         if not info then return nil end
         return info.title, info.level, info.tagName, info.isHeader, info.isCollapsed,
                info.isComplete and 1 or nil, info.frequency, info.questID
+    end
+    _G.GetQuestLogQuestText = function(logIndex)
+        local idx = logIndex
+        if not idx and M.state.selectedQuestID then
+            idx = _G.C_QuestLog.GetLogIndexForQuestID(M.state.selectedQuestID)
+        end
+        local e = idx and M.state.questLog[idx]
+        if e then
+            return e.description or "", e.objectivesText or ""
+        end
+        return "", ""
     end
     _G.GetQuestGreenRange = function() return 5 end
 
@@ -1429,6 +1469,17 @@ function M.SetQuestObjectiveProgress(qid, objIndex, numFulfilled, numRequired, f
             end
             e.isComplete = allDone
             M.FireEvent("QUEST_LOG_UPDATE")
+            return true
+        end
+    end
+    return false
+end
+
+function M.SetQuestLogText(qid, description, objectivesText)
+    for _, e in ipairs(M.state.questLog) do
+        if e.questID == qid then
+            e.description = description
+            e.objectivesText = objectivesText
             return true
         end
     end

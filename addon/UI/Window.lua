@@ -33,7 +33,11 @@
 --      and playerHint forwarding from Window.Refresh -> RefreshRouteTab ->
 --      ComputeRouteTabCache -> GetCurrentStep compatible with WoW Forever
 --      16001.
---   3. Exposes Window.GetSnapshot() (including routeRows),
+--   3. Pooled Route, Dungeon & Unlock Chain, Special Reward, and Diagnostics
+--      rows show full quest info/instructions tooltips on hover (via
+--      UI/QuestInfo.lua) and open the Quest Log to that quest on Left-Click
+--      (with Right-Click / Ctrl-Click jump-to-step or pin-waypoint actions).
+--   4. Exposes Window.GetSnapshot() (including routeRows),
 --      Window.ShowTab(route|dungeons|rewards|diag), Window.SelectCharacter(),
 --      Window.SetMaxLevelOffset(), and programmatic setters for clean testing.
 --------------------------------------------------------------------------------
@@ -543,6 +547,7 @@ end
 local function CreateRouteRow(child, _, rowH)
     local row = CreateFrame("Button", nil, child, "BackdropTemplate")
     row:SetHeight(rowH - 2)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     local hl = row:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints()
     if hl.SetColorTexture then hl:SetColorTexture(1, 1, 1, 0.08) end
@@ -567,9 +572,40 @@ local function CreateRouteRow(child, _, rowH)
             ns.Waypoint.SetForStep(st, { announce = true })
         end
     end)
+    row.pin:SetScript("OnLeave", function(self)
+        if ns.QuestInfo then
+            ns.QuestInfo.HideTooltip(self)
+        end
+    end)
 
-    row:SetScript("OnClick", function(self)
-        if not self.isDynamic and self.stepIdx then
+    row:SetScript("OnEnter", function(self)
+        if self.step and ns.QuestInfo then
+            ns.QuestInfo.ShowTooltip(self, {
+                step = self.step,
+                blockReason = self.blockReason,
+                rightClickHint = (not self.isDynamic and self.stepIdx)
+                    and "Right-Click / Ctrl-Click: Jump to Step"
+                    or "Right-Click: Pin Waypoint",
+            })
+        end
+    end)
+    row:SetScript("OnLeave", function(self)
+        if ns.QuestInfo then
+            ns.QuestInfo.HideTooltip(self)
+        end
+    end)
+    row:SetScript("OnClick", function(self, button)
+        if button == "RightButton" or (IsControlKeyDown and IsControlKeyDown()) then
+            if not self.isDynamic and self.stepIdx then
+                ns.State.JumpToStep(self.stepIdx)
+            elseif self.step then
+                ns.Waypoint.SetForStep(self.step, { announce = true })
+            end
+            return
+        end
+        if self.step and ns.QuestInfo and ns.QuestInfo.ResolvePrimaryQuestId and ns.QuestInfo.ResolvePrimaryQuestId(nil, self.step) then
+            ns.QuestInfo.OpenQuestInLog(nil, self.step)
+        elseif not self.isDynamic and self.stepIdx then
             ns.State.JumpToStep(self.stepIdx)
         elseif self.step then
             ns.Waypoint.SetForStep(self.step, { announce = true })
@@ -610,6 +646,7 @@ local function BindRouteRow(row, item)
     row.step = st
     row.stepIdx = item.idx
     row.isDynamic = item.isDynamic or item.isInjected
+    row.blockReason = item.blockReason
 
     local b = st.badges
     local ch = (b and b.chain) or (st.chainTotal and st.chainTotal >= 2 and {
@@ -681,8 +718,13 @@ local function BindRouteRow(row, item)
 end
 
 local function CreateDungeonRow(child, rowW)
-    local row = CreateFrame("Frame", nil, child, "BackdropTemplate")
+    local row = CreateFrame("Button", nil, child, "BackdropTemplate")
     row:SetHeight(20)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    row.hl = row:CreateTexture(nil, "HIGHLIGHT")
+    row.hl:SetAllPoints()
+    if row.hl.SetColorTexture then row.hl:SetColorTexture(1, 1, 1, 0.07) end
+
     row.left = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.left:SetPoint("LEFT", 4, 0)
     row.left:SetWidth(rowW - 90)
@@ -701,6 +743,39 @@ local function CreateDungeonRow(child, rowW)
             ns.Waypoint.SetTarget(pt, { announce = true })
         end
     end)
+    row.pin:SetScript("OnLeave", function(self)
+        if ns.QuestInfo then
+            ns.QuestInfo.HideTooltip(self)
+        end
+    end)
+
+    row:SetScript("OnEnter", function(self)
+        if (self.questId or self.dungeonInfo) and ns.QuestInfo then
+            ns.QuestInfo.ShowTooltip(self, {
+                questId = self.questId,
+                dungeon = self.dungeonInfo,
+                rightClickHint = self.pinTarget and "Right-Click: Pin Waypoint" or nil,
+            })
+        end
+    end)
+    row:SetScript("OnLeave", function(self)
+        if ns.QuestInfo then
+            ns.QuestInfo.HideTooltip(self)
+        end
+    end)
+    row:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            if self.pinTarget and ns.Waypoint and ns.Waypoint.SetTarget then
+                ns.Waypoint.SetTarget(self.pinTarget, { announce = true })
+            end
+            return
+        end
+        if self.questId and ns.QuestInfo then
+            ns.QuestInfo.OpenQuestInLog(self.questId, nil, { pinTarget = self.pinTarget })
+        elseif self.dungeonInfo and ns.QuestInfo then
+            ns.QuestInfo.OpenDungeonInLog(self.dungeonInfo, self.pinTarget)
+        end
+    end)
     return row
 end
 
@@ -717,12 +792,33 @@ local function BindDungeonRow(row, item)
     row.left:SetText(item.left)
     row.right:SetText(item.right or "")
     row.pinTarget = item.pinTarget
+    row.questId = item.questId
+    row.dungeonInfo = item.dungeon
+    if row.hl then
+        local canHover = (item.questId ~= nil or item.dungeon ~= nil)
+        if canHover then
+            if row._hlShown ~= true then
+                row._hlShown = true
+                row.hl:Show()
+            end
+        else
+            if row._hlShown ~= false then
+                row._hlShown = false
+                row.hl:Hide()
+            end
+        end
+    end
     if item.pinTarget then row.pin:Show() else row.pin:Hide() end
 end
 
 local function CreateRewardRow(child, rowW)
-    local row = CreateFrame("Frame", nil, child, "BackdropTemplate")
+    local row = CreateFrame("Button", nil, child, "BackdropTemplate")
     row:SetHeight(34)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    row.hl = row:CreateTexture(nil, "HIGHLIGHT")
+    row.hl:SetAllPoints()
+    if row.hl.SetColorTexture then row.hl:SetColorTexture(1, 1, 1, 0.07) end
+
     row.top = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.top:SetPoint("TOPLEFT", 5, -3)
     row.top:SetWidth(rowW - 52)
@@ -741,6 +837,36 @@ local function CreateRewardRow(child, rowW)
         local pt = self:GetParent().pinTarget
         if pt and ns.Waypoint and ns.Waypoint.SetTarget then
             ns.Waypoint.SetTarget(pt, { announce = true })
+        end
+    end)
+    row.pin:SetScript("OnLeave", function(self)
+        if ns.QuestInfo then
+            ns.QuestInfo.HideTooltip(self)
+        end
+    end)
+
+    row:SetScript("OnEnter", function(self)
+        if self.questId and ns.QuestInfo then
+            ns.QuestInfo.ShowTooltip(self, {
+                questId = self.questId,
+                rightClickHint = self.pinTarget and "Right-Click: Pin Waypoint" or nil,
+            })
+        end
+    end)
+    row:SetScript("OnLeave", function(self)
+        if ns.QuestInfo then
+            ns.QuestInfo.HideTooltip(self)
+        end
+    end)
+    row:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            if self.pinTarget and ns.Waypoint and ns.Waypoint.SetTarget then
+                ns.Waypoint.SetTarget(self.pinTarget, { announce = true })
+            end
+            return
+        end
+        if self.questId and ns.QuestInfo then
+            ns.QuestInfo.OpenQuestInLog(self.questId, nil, { pinTarget = self.pinTarget })
         end
     end)
     ApplyBackdrop(row, 0.08, 0.09, 0.13, 0.85, 0.18, 0.22, 0.28, 0.9)
@@ -766,6 +892,7 @@ local function BindRewardRow(row, rw)
 
     row.top:SetText(string.format("%s %s |cff888888[%d]|r", stLabel, rw.name, rw.questLevel or 0))
     row.bot:SetText(string.format("%s (%s) · %s", rw.zoneName or "?", ns.FormatCoords(rw.x, rw.y), table.concat(badges, "  ")))
+    row.questId = rw.questId
     row.pinTarget = (rw.x and rw.y) and {
         zoneId = rw.zoneId,
         zoneName = rw.zoneName,
@@ -778,8 +905,13 @@ local function BindRewardRow(row, rw)
 end
 
 local function CreateDiagRow(child)
-    local row = CreateFrame("Frame", nil, child, "BackdropTemplate")
+    local row = CreateFrame("Button", nil, child, "BackdropTemplate")
     row:SetHeight(24)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    row.hl = row:CreateTexture(nil, "HIGHLIGHT")
+    row.hl:SetAllPoints()
+    if row.hl.SetColorTexture then row.hl:SetColorTexture(1, 1, 1, 0.07) end
+
     row.left = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.left:SetPoint("LEFT", 6, 0)
     row.left:SetWidth(350)
@@ -790,6 +922,33 @@ local function CreateDiagRow(child)
     row.right:SetPoint("RIGHT", -6, 0)
     row.right:SetPoint("LEFT", row.left, "RIGHT", 6, 0)
     row.right:SetJustifyH("RIGHT")
+
+    row:SetScript("OnEnter", function(self)
+        if (self.questId or self.step) and ns.QuestInfo then
+            ns.QuestInfo.ShowTooltip(self, {
+                questId = self.questId,
+                step = self.step,
+                blockReason = self.blockReason,
+                rightClickHint = (self.step and self.step.x and self.step.y) and "Right-Click: Pin Waypoint" or nil,
+            })
+        end
+    end)
+    row:SetScript("OnLeave", function(self)
+        if ns.QuestInfo then
+            ns.QuestInfo.HideTooltip(self)
+        end
+    end)
+    row:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            if self.step and ns.Waypoint and ns.Waypoint.SetForStep then
+                ns.Waypoint.SetForStep(self.step, { announce = true })
+            end
+            return
+        end
+        if (self.questId or self.step) and ns.QuestInfo then
+            ns.QuestInfo.OpenQuestInLog(self.questId, self.step)
+        end
+    end)
     return row
 end
 
@@ -805,6 +964,23 @@ local function BindDiagRow(row, item)
     end
     row.left:SetText(item.left)
     row.right:SetText(item.right)
+    row.questId = item.questId
+    row.step = item.step
+    row.blockReason = item.blockReason
+    if row.hl then
+        local canHover = (item.questId ~= nil or item.step ~= nil)
+        if canHover then
+            if row._hlShown ~= true then
+                row._hlShown = true
+                row.hl:Show()
+            end
+        else
+            if row._hlShown ~= false then
+                row._hlShown = false
+                row.hl:Hide()
+            end
+        end
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -2392,6 +2568,7 @@ local function RefreshDungeonsTab()
         for _, d in ipairs(dungeons) do
             dEntries[#dEntries + 1] = {
                 kind = "header",
+                dungeon = d,
                 left = string.format("|cffffd100%s|r |cffaaaaaa[%d-%d, rec %d]|r", d.name, d.minLevel, d.maxLevel, d.recommendedLevel),
                 right = string.format("%d/%d Q", d.completedQuests, d.totalQuests),
                 pinTarget = d.entranceCoords and {
@@ -2432,6 +2609,7 @@ local function RefreshDungeonsTab()
                     local pt = cs.starter
                     dEntries[#dEntries + 1] = {
                         kind = "step",
+                        questId = cs.questId,
                         left = string.format("    %s %s |cff888888[%d]|r", mark, cs.name, cs.questLevel or 0),
                         right = "",
                         pinTarget = (cs.status ~= "completed" and pt and pt.x and pt.y) and {
@@ -2456,6 +2634,7 @@ local function RefreshDungeonsTab()
                 if dqBis >= 40 then extra[#extra + 1] = "BiS" end
                 dEntries[#dEntries + 1] = {
                     kind = "step",
+                    questId = dq.questId,
                     left = string.format("  %s %s [%d]", mark, dq.name, dq.questLevel or 0),
                     right = table.concat(extra, " "),
                     pinTarget = (dq.status ~= "completed" and pt and pt.x and pt.y) and {
@@ -2602,6 +2781,9 @@ local function RefreshDiagTab()
             local blk = blocked[i]
             diagEntries[#diagEntries + 1] = {
                 isBlocked = true,
+                questId = blk.questId,
+                step = blk.step,
+                blockReason = blk.reason or blk.code,
                 left = string.format("|cffff6644[BLOCKED]|r #%d %s — %s", blk.index or 0, blk.title or "Step", blk.zoneName or ""),
                 right = blk.reason or blk.code or "Blocked",
             }
@@ -2612,6 +2794,8 @@ local function RefreshDiagTab()
             local sb = c.step.scoreBreakdown or {}
             diagEntries[#diagEntries + 1] = {
                 isBlocked = false,
+                questId = c.step and c.step.questId,
+                step = c.step,
                 left = string.format("#%d [%.1f] %s — %s (%s)", i, c.score, c.step.action, c.step.title, c.step.zoneName or ""),
                 right = string.format("XP:%d  Trv:-%d  Dng:%d  Rwd:%d  Skn:%d", sb.xp or 0, sb.travel or 0, sb.dungeon or 0, sb.reward or 0, sb.skinning or 0),
             }

@@ -84,7 +84,14 @@ def _run_luajit(script: str) -> tuple[int, str, str]:
 #   plus Dungeons & BiS tab visibility, Nav/Scorer/GPS/Window filtering, HUD [Dungeon] badge and
 #   'No Dung'/'Dung On' mode indicator, /fqp skipdungeons & /fqp dungeons skip|allow|toggle commands,
 #   synchronized Route + Settings "Skip Dungeons" checkboxes, and cursor rewind to do all
-#   deferred dungeon quests at once when turned off), AddonCompartment, waypoints, and sync.
+#   deferred dungeon quests at once when turned off), quest hover tooltips (QuestieDB
+#   objectivesText, GetQuestLogQuestText narrative, live C_QuestLog.GetQuestObjectives,
+#   static objective coords, DUNGEON_RUN batch details, rewards, and blocked reasons across HUD
+#   and Route/Dungeons/Rewards/Diag tabs), click-to-open Quest Log (modern QuestMapFrame_OpenToQuestDetails,
+#   standalone QuestLogFrame + QuestLog_SetSelection, unaccepted quest-giver pin fallback,
+#   Shift-click chat links, Right-Click waypoint/jump, InCombatLockdown, and Forever controller
+#   InputUtil.IsGamepadUIEnabled guards with 0 frame/region allocations), AddonCompartment,
+#   waypoints, and sync.
 class TestForeverQuestPathAddon(unittest.TestCase):
     """Lua 5.1 / WoW Forever 16001 harness tests for ForeverQuestPath addon."""
 
@@ -3437,6 +3444,459 @@ print("SKIP_DUNGEON_QUESTS_OPTION_OK")
         rc, out, err = _run_luajit(lua_script)
         self.assertEqual(rc, 0, f"Skip dungeon quests test failed:\nSTDOUT: {out}\nSTDERR: {err}")
         self.assertIn("SKIP_DUNGEON_QUESTS_OPTION_OK", out)
+
+    def test_quest_hover_tooltip_and_click_open_quest_log(self) -> None:
+        lua_script = f"""
+local Mock = dofile({str(WOW_MOCK_LUA)!r})
+Mock.Reset({{ tomtom = true, openmap = true }})
+
+Mock.SetCharacter({{
+    name = "TooltipRogue",
+    realm = "Forever",
+    level = 24,
+    raceName = "Gnome",
+    raceFile = "Gnome",
+    raceId = 7,
+    className = "Rogue",
+    classFile = "ROGUE",
+    classId = 4,
+    faction = "Alliance",
+    mapId = 1437, -- Wetlands
+    x = 0.108,
+    y = 0.596,
+}})
+
+_G.QuestieDB = {{
+    QueryQuestSingle = function(qid, field)
+        if qid == 279 then
+            if field == "name" then return "Claws from the Deep"
+            elseif field == "requiredLevel" then return 20
+            elseif field == "questLevel" then return 22
+            elseif field == "objectivesText" then return {{ "Slay Bluegill Murlocs and bring Gobbler's Head to Karl Boran." }}
+            elseif field == "triggerEnd" then return {{ "Return Gobbler's Head to Menethil Harbor." }}
+            end
+        elseif qid == 470 then
+            if field == "name" then return "Digging Through the Ooze"
+            elseif field == "requiredLevel" then return 19
+            elseif field == "questLevel" then return 24
+            elseif field == "objectivesText" then return {{ "Recover Sida's Bag from oozes in central Wetlands." }}
+            end
+        elseif qid == 484 then
+            if field == "name" then return "Young Crocolisk Skins"
+            elseif field == "requiredLevel" then return 18
+            elseif field == "questLevel" then return 22
+            elseif field == "objectivesText" then return {{ "Collect 4 Young Crocolisk Skins." }}
+            end
+        end
+        return nil
+    end,
+    IsDoable = function() return true end,
+}}
+
+-- Accept Q279 with live objective progress (3/8) and active quest log narrative text
+Mock.AcceptQuest(279, "Claws from the Deep", 22, false)
+Mock.SetQuestObjectiveProgress(279, 1, 3, 8, false)
+Mock.SetQuestLogText(279,
+    "Karl Boran asked you to thin out the Bluegill Murlocs along the coast.",
+    "Collect Gobbler's Head and slay Bluegill Murlocs.")
+
+local addonName, ns = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonName)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+
+assert(ns.version == "1.3.0", "Expected ns.version == 1.3.0, got " .. tostring(ns.version))
+assert(type(ns.QuestInfo) == "table", "Expected ns.QuestInfo module to be loaded")
+
+ns.HUD.SetShown(true)
+ns.Window.SetShown(true)
+ns.Window.ShowTab("route")
+
+local function tooltipToString()
+    local parts = {{}}
+    for _, ln in ipairs(_G.GameTooltip._lines or {{}}) do
+        if ln.text then parts[#parts + 1] = tostring(ln.text) end
+        if ln.left then parts[#parts + 1] = tostring(ln.left) .. " " .. tostring(ln.right or "") end
+    end
+    return table.concat(parts, "\\n")
+end
+
+local function findButtons(root, pred, out)
+    out = out or {{}}
+    if root and pred(root) then
+        out[#out + 1] = root
+    end
+    for _, ch in ipairs((root and root._children) or {{}}) do
+        findButtons(ch, pred, out)
+    end
+    return out
+end
+
+Mock.ResetMetrics()
+
+-- 1. Hovering HUD card displays current quest info & respects smart left/right anchoring
+local hudFrame = Mock.FindFrameByName("ForeverQuestPathHUD")
+assert(hudFrame and hudFrame.card, "Expected ForeverQuestPathHUD.card")
+assert(hudFrame.card:GetObjectType() == "Button", "Expected HUD.card to be a clickable Button")
+
+local enterCard = hudFrame.card:GetScript("OnEnter")
+local leaveCard = hudFrame.card:GetScript("OnLeave")
+assert(enterCard and leaveCard, "Expected OnEnter/OnLeave scripts on HUD.card")
+enterCard(hudFrame.card)
+assert(_G.GameTooltip._shown == true and _G.GameTooltip:IsOwned(hudFrame.card), "Expected GameTooltip shown & owned by HUD.card")
+assert(_G.GameTooltip._anchor == "ANCHOR_RIGHT", "Expected ANCHOR_RIGHT when center x=400 < UIParent/2, got " .. tostring(_G.GameTooltip._anchor))
+local cardTip = tooltipToString()
+local curStep = ns.State.GetCurrentStep()
+local curQ = curStep and curStep.questId and ns.GetData().quests[curStep.questId]
+local expectedCurName = (curQ and curQ.name) or (curStep and curStep.title) or ""
+assert(expectedCurName ~= "" and cardTip:find(expectedCurName, 1, true),
+    "Expected HUD tooltip to include current quest name '" .. tostring(expectedCurName) .. "', got:\\n" .. cardTip)
+
+-- Simulate HUD positioned on right half of screen -> ANCHOR_LEFT
+local origCardCenter = hudFrame.card.GetCenter
+hudFrame.card.GetCenter = function() return 1500, 300 end
+enterCard(hudFrame.card)
+assert(_G.GameTooltip._anchor == "ANCHOR_LEFT", "Expected ANCHOR_LEFT when center x=1500 > UIParent/2, got " .. tostring(_G.GameTooltip._anchor))
+hudFrame.card.GetCenter = origCardCenter
+
+leaveCard(hudFrame.card)
+assert(_G.GameTooltip._shown == false, "Expected GameTooltip hidden on HUD.card OnLeave")
+
+-- Hover HUD upcoming row
+local upRow1 = nil
+for _, ch in ipairs(hudFrame._children or {{}}) do
+    if ch.GetObjectType and ch:GetObjectType() == "Button" and ch.step and ch ~= hudFrame.card then
+        upRow1 = ch
+        break
+    end
+end
+assert(upRow1 and upRow1:GetScript("OnEnter"), "Expected HUD upcoming row with OnEnter script")
+upRow1:GetScript("OnEnter")(upRow1)
+assert(_G.GameTooltip._shown == true and _G.GameTooltip:IsOwned(upRow1), "Expected GameTooltip owned by HUD upcoming row")
+upRow1:GetScript("OnLeave")(upRow1)
+assert(_G.GameTooltip._shown == false, "Expected GameTooltip hidden on HUD upcoming row OnLeave")
+
+-- 2. Locate Route rows for active Q279 and unaccepted Q470/Q484
+local win = Mock.FindFrameByName("ForeverQuestPathWindow")
+local routeBtns = findButtons(win, function(f) return f.step ~= nil and f.pin ~= nil end)
+assert(#routeBtns > 0, "Expected pooled Route rows")
+
+local row279 = nil
+local rowUnaccepted = nil
+for _, r in ipairs(routeBtns) do
+    if r:IsShown() and r.step then
+        if r.step.questId == 279 and not row279 then
+            row279 = r
+        elseif r.step.action == "ACCEPT" and r.step.questId and not rowUnaccepted then
+            rowUnaccepted = r
+        end
+    end
+end
+if not row279 then
+    -- Switch Route filter to "All Steps" if Q279 sits beyond viewport pool
+    local allBtns = findButtons(win, function(f) return f.label and f.label.GetText and f.label:GetText() == "All Steps" end)
+    if allBtns[1] then
+        allBtns[1]:Click("LeftButton")
+    end
+    for _, r in ipairs(routeBtns) do
+        if r:IsShown() and r.step then
+            if r.step.questId == 279 and not row279 then row279 = r end
+            if r.step.action == "ACCEPT" and r.step.questId and not rowUnaccepted then rowUnaccepted = r end
+        end
+    end
+end
+assert(row279, "Expected visible Route row for active quest 279")
+assert(rowUnaccepted, "Expected visible Route row for an unaccepted ACCEPT step")
+
+-- Hover active Q279 with QuestieDB present: title, Lv 22, QuestieDB instructions, narrative, and live 3/8 objective progress
+row279:GetScript("OnEnter")(row279)
+local tip279 = tooltipToString()
+assert(tip279:find("Claws from the Deep", 1, true), "Expected Q279 title in tooltip")
+assert(tip279:find("Lv 22", 1, true), "Expected Lv 22 in Q279 tooltip")
+assert(tip279:find("Slay Bluegill Murlocs and bring Gobbler's Head to Karl Boran.", 1, true),
+    "Expected QuestieDB objectivesText instructions in Q279 tooltip, got:\\n" .. tip279)
+assert(tip279:find("Karl Boran asked you to thin out the Bluegill Murlocs", 1, true),
+    "Expected GetQuestLogQuestText narrative in Q279 tooltip, got:\\n" .. tip279)
+assert(tip279:find("3/8", 1, true), "Expected live objective progress 3/8 in Q279 tooltip, got:\\n" .. tip279)
+assert(tip279:find("Click: Open in Quest Log", 1, true), "Expected Click hint in Q279 tooltip")
+row279:GetScript("OnLeave")(row279)
+assert(_G.GameTooltip._shown == false, "Expected tooltip hidden on Route row OnLeave")
+
+-- Hover active Q279 WITHOUT QuestieDB -> GetQuestLogQuestText objectivesText + description fallback must still appear
+local savedQDB = _G.QuestieDB
+_G.QuestieDB = nil
+row279:GetScript("OnEnter")(row279)
+local tip279NoQdb = tooltipToString()
+assert(tip279NoQdb:find("Collect Gobbler's Head and slay Bluegill Murlocs.", 1, true),
+    "Expected GetQuestLogQuestText objectivesText fallback when QuestieDB absent, got:\\n" .. tip279NoQdb)
+assert(tip279NoQdb:find("Karl Boran asked you to thin out the Bluegill Murlocs", 1, true),
+    "Expected GetQuestLogQuestText description fallback when QuestieDB absent")
+row279:GetScript("OnLeave")(row279)
+_G.QuestieDB = savedQDB
+
+-- Hover unaccepted quest tooltip via Q470 (GeneratedData objectives + bag reward) and DUNGEON_RUN batch step
+ns.QuestInfo.ShowTooltip(rowUnaccepted, {{ questId = 470, rightClickHint = "Right-Click: Pin Waypoint" }})
+local tip470 = tooltipToString()
+assert(tip470:find("Digging Through the Ooze", 1, true), "Expected Q470 title in tooltip")
+assert(tip470:find("Recover Sida's Bag", 1, true), "Expected QuestieDB objectivesText for unaccepted Q470")
+assert(tip470:find("Sida's Bag", 1, true) and tip470:find("44.3, 24.7", 1, true), "Expected static objective coords in Q470 tooltip")
+assert(tip470:find("10%-Slot Bag") and tip470:find("Ooze%-covered Bag"), "Expected bag & item reward info in Q470 tooltip")
+assert(tip470:find("Available %(Not in Quest Log%)"), "Expected unaccepted status label in Q470 tooltip")
+ns.QuestInfo.HideTooltip(rowUnaccepted)
+
+ns.QuestInfo.ShowTooltip(rowUnaccepted, {{
+    step = {{ action = "DUNGEON_RUN", title = "Deadmines Batch", isDungeon = true, questIds = {{ 279, 470, 484 }} }},
+}})
+local tipBatch = tooltipToString()
+assert(tipBatch:find("Dungeon Batch %(3 Quests%)"), "Expected batch header in DUNGEON_RUN tooltip, got:\\n" .. tipBatch)
+assert(tipBatch:find("Claws from the Deep", 1, true) and tipBatch:find("Digging Through the Ooze", 1, true) and tipBatch:find("Young Crocolisk Skins", 1, true),
+    "Expected all 3 batch quests in DUNGEON_RUN tooltip")
+ns.QuestInfo.HideTooltip(rowUnaccepted)
+
+-- 3. Left-click active Q279 opens Quest Log via QuestMapFrame_OpenToQuestDetails
+Mock.state.openedQuestDetailsID = nil
+Mock.state.selectedQuestID = nil
+_G.WorldMapFrame:Hide()
+_G.WorldMapFrame.QuestLog:Hide()
+row279:Click("LeftButton")
+assert(Mock.state.openedQuestDetailsID == 279, "Expected QuestMapFrame_OpenToQuestDetails(279), got " .. tostring(Mock.state.openedQuestDetailsID))
+assert(C_QuestLog.GetSelectedQuest() == 279, "Expected C_QuestLog.GetSelectedQuest() == 279")
+assert(_G.WorldMapFrame:IsShown() == true and _G.WorldMapFrame.QuestLog:IsShown() == true,
+    "Expected WorldMapFrame and WorldMapFrame.QuestLog shown")
+
+-- Left-click HUD upcoming row & HUD card holding an active quest
+if upRow1 and upRow1.step and upRow1.step.questId then
+    Mock.AcceptQuest(upRow1.step.questId, upRow1.step.title or "Upcoming Q", 24, false)
+    ns.State.Refresh("QUEST_LOG_UPDATE")
+end
+for _ = 1, 10 do
+    local sNow = ns.State.GetCurrentStep()
+    local qNow = ns.QuestInfo.ResolvePrimaryQuestId(nil, sNow)
+    if (not qNow) or ns.QuestInfo.FindQuestLogIndex(qNow) then
+        break
+    end
+    Mock.AcceptQuest(qNow, sNow.title or ("Quest " .. tostring(qNow)), 24, false)
+    ns.State.Refresh("QUEST_LOG_UPDATE")
+end
+ns.HUD.Refresh()
+
+Mock.state.openedQuestDetailsID = nil
+_G.WorldMapFrame:Hide()
+_G.WorldMapFrame.QuestLog:Hide()
+local cardQid = ns.QuestInfo.ResolvePrimaryQuestId(nil, ns.State.GetCurrentStep())
+assert(cardQid and ns.QuestInfo.FindQuestLogIndex(cardQid),
+    "Expected current HUD step quest to be in Quest Log, got " .. tostring(cardQid))
+hudFrame.card:Click("LeftButton")
+assert(Mock.state.openedQuestDetailsID == cardQid,
+    "Expected Left-Click on HUD.card to open Quest Log for " .. tostring(cardQid) .. ", got " .. tostring(Mock.state.openedQuestDetailsID))
+
+-- Left-click HUD upcoming row holding an active quest
+local up279Row = nil
+for _, ch in ipairs(hudFrame._children or {{}}) do
+    if ch.GetObjectType and ch:GetObjectType() == "Button" and ch.step and ch ~= hudFrame.card then
+        if ns.QuestInfo.FindQuestLogIndex(ns.QuestInfo.ResolvePrimaryQuestId(nil, ch.step)) then
+            up279Row = ch
+            break
+        end
+    end
+end
+if not up279Row then
+    upRow1.step = {{ action = "COMPLETE", questId = 279, title = "Claws from the Deep", zoneId = 11, zoneName = "Wetlands", x = 12.2, y = 39.1 }}
+    up279Row = upRow1
+end
+Mock.state.openedQuestDetailsID = nil
+up279Row:Click("LeftButton")
+assert(Mock.state.openedQuestDetailsID == ns.QuestInfo.ResolvePrimaryQuestId(nil, up279Row.step),
+    "Expected Left-Click on HUD upcoming row to open Quest Log")
+
+-- 4. Standalone QuestLogFrame + QuestLog_SetSelection path (use non-CreateFrame table to keep zero-alloc check exact)
+local function findVisibleRouteRow(pred)
+    local allBtns = findButtons(win, function(f) return f.label and f.label.GetText and f.label:GetText() == "All Steps" end)
+    for _, r in ipairs(routeBtns) do
+        if r:IsShown() and r.step and pred(r) then return r end
+    end
+    if allBtns[1] then
+        allBtns[1]:Click("LeftButton")
+    end
+    for _, r in ipairs(routeBtns) do
+        if r:IsShown() and r.step and pred(r) then return r end
+    end
+    return nil
+end
+
+row279 = findVisibleRouteRow(function(r) return r.step.questId == 279 end)
+assert(row279, "Expected visible Route row for Q279 before standalone QuestLogFrame check")
+
+Mock.state.openedQuestDetailsID = nil
+_G.QuestLogFrame = {{
+    _shown = false,
+    IsShown = function(s) return s._shown end,
+    Show = function(s) s._shown = true end,
+    Hide = function(s) s._shown = false end,
+}}
+_G.QuestLogListScrollFrame = {{ ScrollBar = {{ GetValueStep = function() return 16 end, SetValue = function(self, v) _G.__scrollVal = v end }} }}
+_G.ShowUIPanel = function(f) if f and f.Show then f:Show() end end
+_G.QuestLog_SetSelection = function(idx) _G.__qlSelIdx = idx end
+_G.QuestLog_UpdateQuestDetails = function() _G.__qlDetailsUpdated = true end
+_G.QuestLog_Update = function() _G.__qlListUpdated = true end
+
+row279:Click("LeftButton")
+assert(_G.__qlSelIdx == C_QuestLog.GetLogIndexForQuestID(279),
+    "Expected QuestLog_SetSelection(logIndex for 279), got " .. tostring(_G.__qlSelIdx))
+assert(_G.QuestLogFrame:IsShown() == true, "Expected QuestLogFrame:Show() via ShowUIPanel")
+assert(_G.__qlDetailsUpdated == true and _G.__qlListUpdated == true, "Expected QuestLog_UpdateQuestDetails & QuestLog_Update calls")
+assert(Mock.state.openedQuestDetailsID == nil, "Standalone QuestLogFrame path must not invoke QuestMapFrame_OpenToQuestDetails")
+_G.QuestLogFrame = nil
+_G.QuestLogListScrollFrame = nil
+_G.ShowUIPanel = nil
+_G.QuestLog_SetSelection = nil
+_G.QuestLog_UpdateQuestDetails = nil
+_G.QuestLog_Update = nil
+_G.__scrollVal = nil
+_G.__qlSelIdx = nil
+_G.__qlDetailsUpdated = nil
+_G.__qlListUpdated = nil
+
+-- 5. Dungeons & Special Rewards & Diagnostics tabs hover & click
+ns.Window.ShowTab("dungeons")
+local dungBtns = findButtons(win, function(f) return (f.dungeonInfo ~= nil or f.questId ~= nil) and f.pin ~= nil end)
+local headerRow, questRow, rewardRow = nil, nil, nil
+for _, b in ipairs(dungBtns) do
+    if b:IsShown() then
+        if b.dungeonInfo and not headerRow then headerRow = b
+        elseif b.questId and b.top and not rewardRow then rewardRow = b
+        elseif b.questId and b.left and not questRow then questRow = b
+        end
+    end
+end
+assert(headerRow and questRow and rewardRow, "Expected visible Dungeon header, Dungeon quest, and Reward rows")
+
+headerRow:GetScript("OnEnter")(headerRow)
+assert(_G.GameTooltip._shown == true and _G.GameTooltip:IsOwned(headerRow), "Expected tooltip on Dungeon header")
+headerRow:GetScript("OnLeave")(headerRow)
+
+Mock.AcceptQuest(questRow.questId, "Dungeon Quest", 24, false)
+questRow:GetScript("OnEnter")(questRow)
+assert(_G.GameTooltip._shown == true and _G.GameTooltip:IsOwned(questRow), "Expected tooltip on Dungeon quest row")
+questRow:GetScript("OnLeave")(questRow)
+Mock.state.openedQuestDetailsID = nil
+questRow:Click("LeftButton")
+assert(Mock.state.openedQuestDetailsID == questRow.questId, "Expected clicking active Dungeon row to open Quest Log to " .. tostring(questRow.questId))
+
+rewardRow:GetScript("OnEnter")(rewardRow)
+assert(_G.GameTooltip._shown == true and _G.GameTooltip:IsOwned(rewardRow), "Expected tooltip on Reward row")
+rewardRow:GetScript("OnLeave")(rewardRow)
+if rewardRow.pinTarget then
+    Mock.state.tomtomWaypoints = {{}}
+    rewardRow:Click("RightButton")
+    assert(#Mock.state.tomtomWaypoints >= 1, "Expected Right-Click on Reward row to pin waypoint")
+end
+
+-- Switch to Settings/Diag tab: verify blocked & candidate rows hover & click cleanly
+ns.State.SetMaxLevelOffset(-3)
+ns.Window.ShowTab("diag")
+local diagRows = findButtons(win, function(f) return f.blockReason ~= nil or (f.step ~= nil and f.pin == nil and f.right ~= nil) end)
+local blockedDiagRow, candDiagRow = nil, nil
+for _, drow in ipairs(diagRows) do
+    if drow:IsShown() then
+        if drow.blockReason and not blockedDiagRow then blockedDiagRow = drow
+        elseif (not drow.blockReason) and drow.step and not candDiagRow then candDiagRow = drow
+        end
+    end
+end
+assert(blockedDiagRow and candDiagRow, "Expected visible Blocked and Candidate rows on Diag tab")
+blockedDiagRow:GetScript("OnEnter")(blockedDiagRow)
+assert(_G.GameTooltip._shown == true and tooltipToString():find("Locked:", 1, true), "Expected 'Locked:' reason in blocked Diag row tooltip")
+blockedDiagRow:GetScript("OnLeave")(blockedDiagRow)
+candDiagRow:GetScript("OnEnter")(candDiagRow)
+assert(_G.GameTooltip._shown == true and tooltipToString():find("Why:", 1, true), "Expected 'Why:' in candidate Diag row tooltip")
+candDiagRow:GetScript("OnLeave")(candDiagRow)
+ns.State.SetMaxLevelOffset(2)
+
+-- 6. Unaccepted quest Left-Click opens Quest Log cleanly + pins quest giver without calling QuestMapFrame_ShowQuestDetails
+ns.Window.ShowTab("route")
+rowUnaccepted = findVisibleRouteRow(function(r)
+    return r.step.action == "ACCEPT" and r.step.questId and not ns.QuestInfo.FindQuestLogIndex(r.step.questId)
+end)
+assert(rowUnaccepted and rowUnaccepted.step.questId, "Expected visible unaccepted ACCEPT row")
+Mock.state.openedQuestDetailsID = nil
+_G.WorldMapFrame:Hide()
+_G.WorldMapFrame.QuestLog:Hide()
+Mock.state.tomtomWaypoints = {{}}
+Mock.state.chatMessages = {{}}
+rowUnaccepted:Click("LeftButton")
+assert(Mock.state.openedQuestDetailsID == nil, "Unaccepted quest must not invoke QuestMapFrame_ShowQuestDetails")
+assert(_G.WorldMapFrame:IsShown() == true and _G.WorldMapFrame.QuestLog:IsShown() == true,
+    "Expected WorldMapFrame & QuestLog opened for unaccepted quest click")
+assert(#Mock.state.tomtomWaypoints >= 1, "Expected quest giver waypoint pinned for unaccepted quest click")
+local foundNotice = false
+for _, msg in ipairs(Mock.state.chatMessages) do
+    if tostring(msg):find("not in your Quest Log yet", 1, true) then foundNotice = true break end
+end
+assert(foundNotice, "Expected helpful chat notice when clicking unaccepted quest")
+
+-- 7. Right-Click on Route row jumps to step; Right-Click on HUD card pins waypoint
+if not rowUnaccepted.isDynamic and rowUnaccepted.stepIdx then
+    rowUnaccepted:Click("RightButton")
+    assert(ns.State.GetCurrentStepIndex() == rowUnaccepted.stepIdx,
+        "Expected Right-Click on Route row to jump cursor to stepIdx " .. tostring(rowUnaccepted.stepIdx))
+end
+Mock.state.tomtomWaypoints = {{}}
+Mock.state.openedQuestDetailsID = nil
+hudFrame.card:Click("RightButton")
+assert(Mock.state.openedQuestDetailsID == nil and #Mock.state.tomtomWaypoints >= 1,
+    "Expected Right-Click on HUD.card to pin waypoint without changing Quest Log")
+
+row279 = findVisibleRouteRow(function(r) return r.step.questId == 279 end)
+assert(row279, "Expected visible Route row for Q279 before chat-link & guard checks")
+
+-- 8. Shift-Click inserts quest link into active ChatEdit box
+_G.IsShiftKeyDown = function() return true end
+_G.ChatEdit_GetActiveWindow = function() return {{}} end
+_G.ChatEdit_InsertLink = function(txt) _G.__insertedLink = txt end
+row279:Click("LeftButton")
+assert(_G.__insertedLink and _G.__insertedLink:find("Claws from the Deep", 1, true) and _G.__insertedLink:find("(279)", 1, true),
+    "Expected Shift-Click to insert [Claws from the Deep (279)], got " .. tostring(_G.__insertedLink))
+_G.IsShiftKeyDown = function() return false end
+_G.ChatEdit_GetActiveWindow = nil
+_G.ChatEdit_InsertLink = nil
+_G.__insertedLink = nil
+
+-- 9. Combat lockdown & Forever controller guards
+Mock.state.openedQuestDetailsID = nil
+Mock.state.selectedQuestID = nil
+_G.WorldMapFrame:Hide()
+_G.WorldMapFrame.QuestLog:Hide()
+Mock.state.character.inCombat = true
+Mock.state.chatMessages = {{}}
+row279:Click("LeftButton")
+assert(Mock.state.openedQuestDetailsID == nil and _G.WorldMapFrame:IsShown() == false,
+    "InCombatLockdown must prevent opening WorldMapFrame / QuestMapFrame")
+assert(C_QuestLog.GetSelectedQuest() == 279, "InCombatLockdown may still pre-select quest 279 safely")
+Mock.state.character.inCombat = false
+
+Mock.state.openedQuestDetailsID = nil
+_G.InputUtil = {{ IsGamepadUIEnabled = function() return true end }}
+Mock.state.chatMessages = {{}}
+row279:Click("LeftButton")
+assert(Mock.state.openedQuestDetailsID == nil, "Controller mode must block opening Quest Log")
+local foundPadMsg = false
+for _, msg in ipairs(Mock.state.chatMessages) do
+    if tostring(msg):find("controller mode", 1, true) then foundPadMsg = true break end
+end
+assert(foundPadMsg, "Expected controller-mode warning message")
+_G.InputUtil = nil
+
+-- 10. Zero frame / region allocations across all hover & click operations!
+local mAlloc = Mock.GetMetrics()
+assert(mAlloc.createFrameCalls == 0, "Expected 0 CreateFrame calls on hover/click, got " .. tostring(mAlloc.createFrameCalls))
+assert(mAlloc.createRegionCalls == 0, "Expected 0 CreateRegion calls on hover/click, got " .. tostring(mAlloc.createRegionCalls))
+assert(#Mock.errors == 0, "Unexpected Lua errors in tooltip/quest-log test: " .. table.concat(Mock.errors, "; "))
+print("QUEST_HOVER_CLICK_OK")
+"""
+        rc, out, err = _run_luajit(lua_script)
+        self.assertEqual(rc, 0, f"Quest hover/click test failed:\nSTDOUT: {out}\nSTDERR: {err}")
+        self.assertIn("QUEST_HOVER_CLICK_OK", out)
 
     def test_deployed_addon_matches_source_directory(self) -> None:
         self.assertTrue(ADDON_DST.exists(), f"Installed addon directory missing: {ADDON_DST}")

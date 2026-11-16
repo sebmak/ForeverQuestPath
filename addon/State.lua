@@ -13,7 +13,8 @@
 --      and hordeRoutes) with cross-zone outlevel catch-up, fresh zone-aligned
 --      entry, O(1)-first IsStepDirectBlocked filtering of orphaned COMPLETE/TURN_IN
 --      steps, fast CURSOR_BLOCK_OPTS cursor advancement with deferred/blocked
---      cleanup on rewind, O(1) lazy blockedStepsLog compaction, smart ready-
+--      cleanup on rewind, O(1) lazy blockedStepsLog compaction (preserving
+--      step metadata for UI hover/click), smart ready-
 --      turn-in quest log detection (with PROFILE_CHANGED bulk completion sync,
 --      readySigGen-memoized GetReadyTurnInSignature / GetRouteReadySignature,
 --      and flat zero-subtable existingTurninIdx/existingTurninSingle tracking),
@@ -2100,6 +2101,7 @@ local function RecordBlockedStep(step, idx, profileKey, code, reason)
         existing.index = idx or step.index or existing.index or 0
         existing.code = code
         existing.reason = reason
+        existing.step = step or existing.step
         return
     end
     local entry = {
@@ -2111,6 +2113,7 @@ local function RecordBlockedStep(step, idx, profileKey, code, reason)
         zoneName = step.zoneName or "",
         code = code,
         reason = reason or code,
+        step = step,
     }
     blockedStepsByKey[key] = entry
     blockedStepsLog[#blockedStepsLog + 1] = entry
