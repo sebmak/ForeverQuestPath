@@ -1,10 +1,11 @@
 --------------------------------------------------------------------------------
 -- UI/Window.lua
 -- Rules:
---   1. Full Route (with synchronized Ready Turn-In & GPS location/friend-chain
+--   1. Full Route (with synchronized Ready Turn-In, In-Dungeon instance
+--      routing [DUNG] + active dungeon banner, & GPS location/friend-chain
 --      splicing, virtual-completion proactive full-chain expansion using zero-
---      clone simCompleted / GetCompletedReadOnly(), [READY]/[GPS]/[CHAIN]/
---      [Chain X/Y] tags, and Ready Turn-Ins counter), 5-Weight Balance
+--      clone simCompleted / GetCompletedReadOnly(), [READY]/[DUNG]/[GPS]/
+--      [CHAIN]/[Chain X/Y] tags, and Ready Turn-Ins counter), 5-Weight Balance
 --      Sliders, Max Quest Level Offset Slider (-3..+5, default +2) with
 --      prevNonRedMaxLevelOffset preservation across Allow Red (+5) toggles,
 --      Multi-Race/Class Selector, Auto-Reorder (GPS), Skip Elite (Solo),
@@ -25,8 +26,9 @@
 --      routeBefore/routeAfter anchor merging, hoisted EvalHorizonFallbackStep
 --      keeping the loopPos loop trace-clean with string.find ready-count scan,
 --      hSafeElig integer fast path in ComputeRouteTabCache, complete single-
---      quest (incl. DUNGEON_PREP, DUNGEON_RUN, q.exclusiveTo, and
---      State.GetAcceptStepIndexMap) inline filtering, reusable module-level
+--      quest (incl. DUNGEON_PREP, DUNGEON_RUN, All Steps / ROUTE_BLOCK_OPTS
+--      inline fast-path, q.exclusiveTo, and State.GetAcceptStepIndexMap)
+--      inline filtering, reusable module-level
 --      routeScratch context/maps with LuaJIT table.clear-backed WipeMap +
 --      bulk-sync aware isCompFn and lazy lookBlocked allocation, unified
 --      inline TRAVEL lookahead plus vBlockedAccept cascade short-circuiting,
@@ -618,6 +620,7 @@ local function BindRouteRow(row, item)
     local st = item.step
     local am = ns.GetActionMeta(st.action)
     local isReady = (item.isReadyTurnIn == true) or (st.isReadyTurnIn == true)
+    local isInDung = (st.isInDungeon == true) or (st.badges and st.badges.isInDungeon == true)
     local isGps = (item.isGpsReordered == true) or (st.isGpsReordered == true)
     local isFriend = (item.isFriendChain == true) or (st.isFriendChain == true)
     local statusTag = (item.isCurrent and isReady and "|cff4dff9e[READY]|r ")
@@ -627,7 +630,8 @@ local function BindRouteRow(row, item)
         or (item.isBlocked and "|cffff6644[LOCKED]|r ")
         or (item.isSkipped and "|cff888888[SKIP]|r ")
         or "|cff666666[ ]|r "
-    local gpsTag = isFriend and "|cff66e0ff[CHAIN]|r " or (isGps and "|cff99ff66[GPS]|r " or "")
+    local gpsTag = isFriend and "|cff66e0ff[CHAIN]|r "
+        or (isInDung and "|cffff944d[DUNG]|r " or (isGps and "|cff99ff66[GPS]|r " or ""))
 
     local bgKind = item.isCurrent and "curr" or (isReady and "ready" or ((isGps or isFriend) and "gps" or "norm"))
     if row._bgKind ~= bgKind then
@@ -1327,10 +1331,11 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                         if isDoneQ then
                             blockCode, blockReason = nil, nil
                         elseif (isEliteSkip or isDungSkip) and (actE ~= nil or vActive[qid]) and (not isActReady) then
-                            blockCode, blockReason = isEliteSkip and "elite_solo" or "dungeon_skipped", nil
+                            local c = isEliteSkip and "elite_solo" or "dungeon_skipped"
+                            blockCode, blockReason = c, c
                         elseif (actE ~= nil) or simCompleted[qid] or vActive[qid] then
                             blockCode, blockReason = nil, nil
-                        elseif (routeFilter ~= "all") and (not hasQdbGlobal) and (not q.requiredSkill) then
+                        elseif not q.requiredSkill then
                             local checkElig = not isSafeElig
                             if virtExcluded then
                                 blockCode = "exclusive_taken"
@@ -1386,17 +1391,21 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                                     end
                                 end
                             end
+                            blockReason = blockReason or blockCode
                         else
                             blockCode, blockReason = ns.State.IsStepBlocked(st, steps, idx, player, pkey, simCompleted, vActive, t, blockOpts)
                         end
                     end
                 end
-                if isAcceptLike and (not done) and (skipped or outleveled or blockCode ~= nil) then
-                    vBlockedAccept[qid] = true
+                if isAcceptLike and (not done) then
+                    if skipped or outleveled or blockCode ~= nil
+                        or (routeFilter == "all" and actE == nil and type(st.expectedLevel) == "number" and pLv >= st.expectedLevel + 2 and ns.State.IsStepOutleveled(st, player)) then
+                        vBlockedAccept[qid] = true
+                    end
                 end
             end
         end
-    elseif (not hasCustomDone) and (routeFilter ~= "all") and st and st.action == "TRAVEL"
+    elseif (not hasCustomDone) and st and st.action == "TRAVEL"
         and st.zoneId and (not st.questId) and (not st.questIds)
         and (not st.faction) and (not st.races) and (not st.race) and (not st.classes) and (not st.class) then
         fastSingleHandled = true
@@ -1487,7 +1496,7 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                                         nsBlocked = true
                                     elseif (nActE ~= nil) or simCompleted[nqid] or vActive[nqid] then
                                         nsBlocked = false
-                                    elseif (not hasQdbGlobal) and (not nq.requiredSkill) then
+                                    elseif not nq.requiredSkill then
                                         if nVirtExcl then
                                             nsBlocked = true
                                         elseif not ns.State.IsEligibleForPlayer(nqid, player) then
@@ -1572,6 +1581,7 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
                     elseif foundAny and not foundActionable then
                         blockCode = "redundant_travel"
                     end
+                    blockReason = blockReason or blockCode
                 end
             end
         end
@@ -1631,6 +1641,74 @@ local function EvalHorizonFallbackStep(idx, st, isSuppressed, isSafeHorizon, bas
     return baseCount
 end
 
+local function AppendReadyImmediateRows(displayList, dispCount, ovCount, livePlan, routeFilter, zoneTarget, decFn, player, t, curReadyKey, locSeenActionQids, locCompletedQids)
+    if not (livePlan and livePlan.immediate) then
+        return dispCount, ovCount
+    end
+    for i = 1, #livePlan.immediate do
+        local rSt = livePlan.immediate[i]
+        local rq = rSt and rSt.questId
+        local rAct = rSt and rSt.action or ""
+        local dKey = rq and ((type(rq) == "number") and (rq * 8 + (ACTION_DEDUP_CODE[rAct] or 7)) or (rAct .. ":" .. tostring(rq))) or nil
+        if (routeFilter ~= "zone" or rSt.zoneId == zoneTarget) and not (dKey and locSeenActionQids[dKey]) then
+            local decSt = (decFn and decFn(rSt, player, t)) or rSt
+            ovCount = ovCount + 1
+            dispCount = dispCount + 1
+            displayList[dispCount] = AllocPooledRow(
+                overlayRowPool, ovCount, decSt, nil, nil,
+                (curReadyKey ~= nil and decSt.readyStepKey == curReadyKey),
+                false, false, false, nil, true, true, true, nil, nil
+            )
+            if rq then
+                locSeenActionQids[dKey] = true
+                if rAct == "TURN_IN" then
+                    locCompletedQids[rq] = true
+                end
+            end
+        end
+    end
+    return dispCount, ovCount
+end
+
+local function AppendLocationPlanRows(displayList, dispCount, ovCount, locPlan, routeFilter, zoneTarget, decFn, player, t, meta, curGpsKey, curOrigIdx, locSeenActionQids, locCompletedQids)
+    if not (locPlan and locPlan.steps) then
+        return dispCount, ovCount
+    end
+    local isLocSource = (meta.source == "in_dungeon" or meta.source == "gps_reorder" or meta.source == "friend_pivot")
+    for lPos, rawLSt in ipairs(locPlan.steps) do
+        local lSt = (decFn and decFn(rawLSt, player, t)) or rawLSt
+        local lq = lSt.questId or (lSt.qids and lSt.qids[1])
+        if lq then
+            local lAct = lSt.action or ""
+            local dKey = (type(lq) == "number") and (lq * 8 + (ACTION_DEDUP_CODE[lAct] or 7)) or (lAct .. ":" .. tostring(lq))
+            locSeenActionQids[dKey] = true
+            if lAct == "TURN_IN" or lAct == "DUNGEON_RUN" then
+                locCompletedQids[lq] = true
+            end
+        end
+        if routeFilter ~= "zone" or lSt.zoneId == zoneTarget or lSt.isInDungeon == true then
+            local isCurrGps = false
+            if isLocSource then
+                if lPos == (meta.locationPos or 1) then
+                    isCurrGps = true
+                elseif curGpsKey and lSt.gpsStepKey == curGpsKey then
+                    isCurrGps = true
+                elseif curOrigIdx and lSt.origRouteIdx == curOrigIdx then
+                    isCurrGps = true
+                end
+            end
+            ovCount = ovCount + 1
+            dispCount = dispCount + 1
+            displayList[dispCount] = AllocPooledRow(
+                overlayRowPool, ovCount, lSt, lSt.origRouteIdx, nil,
+                isCurrGps, false, false, false, nil, (lSt.origRouteIdx == nil), true,
+                lSt.isReadyTurnIn == true, lSt.isGpsReordered == true, lSt.isFriendChain == true
+            )
+        end
+    end
+    return dispCount, ovCount
+end
+
 ComputeRouteTabCache = function(playerHint)
     local cdb = ns.charDB or {}
     local activeKey = cdb.activeProfile or "balanced"
@@ -1661,11 +1739,13 @@ ComputeRouteTabCache = function(playerHint)
     local locPlan = (not isDynamic) and meta and meta.locationPlan or nil
     local locFirst = locPlan and locPlan.steps and locPlan.steps[1]
     local locSecond = locPlan and locPlan.steps and locPlan.steps[2]
-    local locDisplaySig = string.format("%s:%s:%s:%d:%s:%s",
+    local locDisplaySig = string.format("%s:%s:%s:%d:%s:%s:%s:%s",
         tostring(meta and meta.source or ""),
         tostring(meta and meta.locationPos or 0),
         tostring(locPlan and locPlan.mode or ""),
         tonumber(locPlan and locPlan.steps and #locPlan.steps or 0),
+        tostring(player and player.inInstance == true),
+        tostring(player and player.activeDungeonId or ""),
         tostring(locFirst and (locFirst.gpsStepKey or locFirst.origRouteIdx or locFirst.questId or locFirst.title) or ""),
         tostring(locSecond and (locSecond.gpsStepKey or locSecond.origRouteIdx or locSecond.questId or locSecond.title) or ""))
     local cursorIdx = tonumber(meta and meta.stepIndex) or tonumber(ns.charDB and ns.charDB.stepIndex) or 1
@@ -2097,7 +2177,7 @@ ComputeRouteTabCache = function(playerHint)
                     local st = steps[idx]
                     local isSuppressed = (suppressedMap ~= nil and suppressedMap[idx] == true)
                     local handledFastSafe = false
-                    if useHorizon and (hSafeElig[loopPos] == true) and (not hasCustomDone) and (not hasSkipped) and (not hasQdbGlobal) and st then
+                    if useHorizon and (hSafeElig[loopPos] == true) and (not hasCustomDone) and (not hasSkipped) and st then
                         local qid = hQids[loopPos]
                         local actCode = hActCodes[loopPos]
                         local actE = activeMap[qid]
@@ -2259,7 +2339,9 @@ ComputeRouteTabCache = function(playerHint)
         if readyCount > 0 then
             sumText = sumText .. string.format("  |  Ready Turn-Ins: |cff4dff9e%d|r", readyCount)
         end
-        if locPlan and locPlan.mode == "friend_pivot" then
+        if locPlan and locPlan.mode == "in_dungeon" then
+            sumText = sumText .. "  |  |cffff944dIn Dungeon: " .. tostring(locPlan.dungeonName or player.zoneName or "Instance") .. "|r"
+        elseif locPlan and locPlan.mode == "friend_pivot" then
             sumText = sumText .. "  |  |cff66e0ffFriend Chain Active|r"
         elseif locPlan and locPlan.mode == "gps_reorder" then
             sumText = sumText .. "  |  |cff99ff66GPS Reorder Active|r"
@@ -2298,75 +2380,41 @@ ComputeRouteTabCache = function(playerHint)
             local ovCount = 0
             local zoneTarget = player.zoneId
             local curReadyKey = (meta.source == "ready_turnin" and currentStep and currentStep.readyStepKey) or nil
-            local curGpsKey = ((meta.source == "gps_reorder" or meta.source == "friend_pivot") and currentStep and currentStep.gpsStepKey) or nil
-            local curOrigIdx = ((meta.source == "gps_reorder" or meta.source == "friend_pivot") and currentStep and currentStep.origRouteIdx) or nil
+            local isLocSrc = (meta.source == "in_dungeon" or meta.source == "gps_reorder" or meta.source == "friend_pivot")
+            local curGpsKey = (isLocSrc and currentStep and currentStep.gpsStepKey) or nil
+            local curOrigIdx = (isLocSrc and currentStep and currentStep.origRouteIdx) or nil
             local suppressedMap = (routeFilter ~= "all" and locPlan and locPlan.suppressedOrigIdx) or nil
             local locSeenActionQids = routeScratch.locSeen
             local locCompletedQids = routeScratch.locDone
             WipeMap(locSeenActionQids)
             WipeMap(locCompletedQids)
             local livePlan = (meta and meta.readyPlan) or bSlot.plan
+            local decFn = ns.State.DecorateStepChain
 
-            if routeFilter ~= "all" and livePlan and livePlan.immediate then
-                local decFn = ns.State.DecorateStepChain
-                for i = 1, #livePlan.immediate do
-                    local rSt = livePlan.immediate[i]
-                    if routeFilter ~= "zone" or rSt.zoneId == zoneTarget then
-                        local decSt = (decFn and decFn(rSt, player, t)) or rSt
-                        ovCount = ovCount + 1
-                        dispCount = dispCount + 1
-                        displayList[dispCount] = AllocPooledRow(
-                            overlayRowPool, ovCount, decSt, nil, nil,
-                            (curReadyKey ~= nil and decSt.readyStepKey == curReadyKey),
-                            false, false, false, nil, true, true, true, nil, nil
-                        )
-                        local rq = decSt and decSt.questId
-                        if rq then
-                            local rAct = decSt.action or ""
-                            local dKey = (type(rq) == "number") and (rq * 8 + (ACTION_DEDUP_CODE[rAct] or 7)) or (rAct .. ":" .. tostring(rq))
-                            locSeenActionQids[dKey] = true
-                            if rAct == "TURN_IN" then locCompletedQids[rq] = true end
-                        end
-                    end
-                end
-            end
-
-            if routeFilter ~= "all" and locPlan and locPlan.steps then
-                for lPos, rawLSt in ipairs(locPlan.steps) do
-                    local lSt = (ns.State.DecorateStepChain and ns.State.DecorateStepChain(rawLSt, player, t)) or rawLSt
-                    local lq = lSt.questId or (lSt.qids and lSt.qids[1])
-                    if lq then
-                        local lAct = lSt.action or ""
-                        local dKey = (type(lq) == "number") and (lq * 8 + (ACTION_DEDUP_CODE[lAct] or 7)) or (lAct .. ":" .. tostring(lq))
-                        locSeenActionQids[dKey] = true
-                        if lAct == "TURN_IN" or lAct == "DUNGEON_RUN" then
-                            locCompletedQids[lq] = true
-                        end
-                    end
-                    if routeFilter ~= "zone" or lSt.zoneId == zoneTarget then
-                        local isCurrGps = false
-                        if meta.source == "gps_reorder" or meta.source == "friend_pivot" then
-                            if lPos == (meta.locationPos or 1) then
-                                isCurrGps = true
-                            elseif curGpsKey and lSt.gpsStepKey == curGpsKey then
-                                isCurrGps = true
-                            elseif curOrigIdx and lSt.origRouteIdx == curOrigIdx then
-                                isCurrGps = true
-                            end
-                        end
-                        ovCount = ovCount + 1
-                        dispCount = dispCount + 1
-                        displayList[dispCount] = AllocPooledRow(
-                            overlayRowPool, ovCount, lSt, lSt.origRouteIdx, nil,
-                            isCurrGps, false, false, false, nil, (lSt.origRouteIdx == nil), true,
-                            lSt.isReadyTurnIn == true, lSt.isGpsReordered == true, lSt.isFriendChain == true
-                        )
-                    end
+            if routeFilter ~= "all" then
+                if locPlan and locPlan.mode == "in_dungeon" then
+                    dispCount, ovCount = AppendLocationPlanRows(
+                        displayList, dispCount, ovCount, locPlan, routeFilter, zoneTarget,
+                        decFn, player, t, meta, curGpsKey, curOrigIdx, locSeenActionQids, locCompletedQids
+                    )
+                    dispCount, ovCount = AppendReadyImmediateRows(
+                        displayList, dispCount, ovCount, livePlan, routeFilter, zoneTarget,
+                        decFn, player, t, curReadyKey, locSeenActionQids, locCompletedQids
+                    )
+                else
+                    dispCount, ovCount = AppendReadyImmediateRows(
+                        displayList, dispCount, ovCount, livePlan, routeFilter, zoneTarget,
+                        decFn, player, t, curReadyKey, locSeenActionQids, locCompletedQids
+                    )
+                    dispCount, ovCount = AppendLocationPlanRows(
+                        displayList, dispCount, ovCount, locPlan, routeFilter, zoneTarget,
+                        decFn, player, t, meta, curGpsKey, curOrigIdx, locSeenActionQids, locCompletedQids
+                    )
                 end
             end
 
             local bpCount = 0
-            local nonGpsSource = (meta.source ~= "ready_turnin" and meta.source ~= "gps_reorder" and meta.source ~= "friend_pivot")
+            local nonGpsSource = (meta.source ~= "ready_turnin" and not isLocSrc)
             local notAllFilter = (routeFilter ~= "all")
             for i = 1, bCount do
                 local fl = bFlags[i]

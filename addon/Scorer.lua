@@ -27,8 +27,11 @@
 --      when skipEliteNow is true (toggles.skipEliteSolo ~= false and solo),
 --      and instance dungeon quests (q.isDungeon or act.isDungeon) are skipped
 --      when skipDungeons is enabled (toggles.skipDungeons ~= false) while
---      preserving ready turn-ins and outdoor unlock quests; pure scoring
---      functions must never mutate live SavedVariables or game state.
+--      preserving ready turn-ins and outdoor unlock quests — except when the
+--      player is inside a dungeon instance (player.inInstance == true), in
+--      which case GetDynamicSteps prepends State.GetActiveDungeonPlan steps
+--      first; pure scoring functions must never mutate live SavedVariables or
+--      game state.
 --   4. Travel estimates and dynamic candidate selection plug into ns.Nav
 --      (terrain/road/gate Bidirectional Dijkstra + frontier nodeToEligible
 --      search, with bounded skipIndexRebuild=true lookahead steps) when
@@ -1331,11 +1334,13 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
     local skipDungeonsNow = (ns.State and ns.State.ShouldSkipDungeonsNow) and ns.State.ShouldSkipDungeonsNow(toggles) or (toggles.skipDungeons ~= false)
 
     local dynKey = string.format(
-        "%d:%d:%d:%d:%d:%s:%s:%s:%s:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d:%d",
+        "%d:%d:%d:%d:%d:%s:%s:%s:%s:%s:%s:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d:%d",
         gen, sGen,
         tonumber(player and player.level) or 24,
         tonumber(player and player.xpPct) or 0,
         maxOffset,
+        tostring(player and player.inInstance == true),
+        tostring(player and player.activeDungeonId or ""),
         tostring(player and player.zoneId or 0),
         tostring(player and player.x or -1),
         tostring(player and player.y or -1),
@@ -1437,7 +1442,41 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
     }
 
     local steps = {}
-    for i = 1, count do
+    local startStep = 1
+    if player and player.inInstance == true and ns.State and ns.State.GetActiveDungeonPlan then
+        local dPlan = ns.State.GetActiveDungeonPlan(player, toggles)
+        if dPlan and type(dPlan.steps) == "table" and #dPlan.steps > 0 then
+            local seedLimit = math.min(count, #dPlan.steps)
+            for sIdx = 1, seedLimit do
+                local dst = dPlan.steps[sIdx]
+                local decDst = (ns.State.DecorateStepChain and ns.State.DecorateStepChain(dst, player, toggles)) or dst
+                steps[#steps + 1] = decDst
+                local dQid = dst.questId
+                local dAct = dst.action
+                if dQid then
+                    if dAct == "ACCEPT" then
+                        local dq = data.quests and data.quests[dQid]
+                        local dHasObj = dq and type(dq.objectives) == "table" and #dq.objectives > 0
+                        vState.active[dQid] = { questId = dQid, isComplete = (not dHasObj) }
+                    elseif dAct == "COMPLETE" then
+                        vState.active[dQid] = { questId = dQid, isComplete = true }
+                    elseif dAct == "TURN_IN" then
+                        vState.active[dQid] = nil
+                        vState.completed[dQid] = true
+                    end
+                end
+                if dst.zoneId then vState.zoneId = dst.zoneId end
+                if dst.zoneName then vState.zoneName = dst.zoneName end
+                if dst.x and dst.y then
+                    vState.x = dst.x
+                    vState.y = dst.y
+                end
+            end
+            startStep = #steps + 1
+        end
+    end
+
+    for i = startStep, count do
         vState.stepCounter = i
         vState.isLiveState = (i == 1)
         local ranked = Scorer.RankAvailableCandidates(vState, weights, toggles, data)

@@ -2,11 +2,12 @@
 -- UI/HUD.lua
 -- Rules:
 --   1. Compact, movable HUD Tracker displaying the Next Step card (action,
---      quest/target, NPC & coords, travel note, XP/Gold/Bag/<Class> BiS/Skin/LW/
---      Elite/Dungeon/Ready Turn-In/Friend Chain/GPS Reorder/Chain Progress
---      badges, "Why this step?"), active MaxLv cap, GPS status, Grouped/No
---      Elite/Elite All + No Dung/Dung On indicator, Ready Turn-Ins counter,
---      Skip / Back / Reset / Pin buttons, and 5 Upcoming Steps with Chain tags.
+--      quest/target, NPC & coords / "Inside Dungeon", travel note, XP/Gold/
+--      Bag/<Class> BiS/Skin/LW/Elite/Dungeon/In Dungeon/Ready Turn-In/Friend
+--      Chain/GPS Reorder/Chain Progress badges, "Why this step?"), active MaxLv
+--      cap, GPS/instance status, Grouped/No Elite/Elite All + No Dung/Dung On/
+--      Dung Active indicator, Ready Turn-Ins counter, Skip / Back / Reset / Pin
+--      buttons, and 5 Upcoming Steps with Chain tags.
 --   2. Reuses pooled row widgets; never leaks frames across refreshes.
 --   3. Shows full quest info/instructions tooltips on hover over the Next Step
 --      card and Upcoming Steps (via UI/QuestInfo.lua), opens the Quest Log to
@@ -113,7 +114,9 @@ local function FormatBadges(step, player)
     if step.isFriendChain or b.isFriendChain then
         parts[#parts + 1] = "|cff66e0ff[Friend Chain]|r"
     end
-    if step.isGpsReordered or b.isGpsReordered then
+    if step.isInDungeon or b.isInDungeon then
+        parts[#parts + 1] = "|cffff944d[In Dungeon]|r"
+    elseif step.isGpsReordered or b.isGpsReordered then
         parts[#parts + 1] = "|cff99ff66[GPS Reorder]|r"
     end
     if b.isReadyTurnIn or step.isReadyTurnIn then
@@ -187,7 +190,9 @@ function HUD.GetViewModel()
     local readySuffix = (readyCount > 0) and string.format(" · Ready Turn-Ins: %d", readyCount) or ""
     local gpsEnabled = not (cdb.toggles and cdb.toggles.locationReorder == false)
     local gpsSuffix = ""
-    if meta and meta.source == "friend_pivot" then
+    if meta and meta.source == "in_dungeon" then
+        gpsSuffix = " · In Dungeon"
+    elseif meta and meta.source == "friend_pivot" then
         gpsSuffix = " · Friend Chain"
     elseif meta and meta.source == "gps_reorder" then
         gpsSuffix = " · GPS Reorder"
@@ -198,7 +203,7 @@ function HUD.GetViewModel()
     local skipEliteSolo = not (cdb.toggles and cdb.toggles.skipEliteSolo == false)
     local skipDungeons = not (cdb.toggles and cdb.toggles.skipDungeons == false)
     local eliteSuffix = inGroup and " · Grouped" or (skipEliteSolo and " · No Elite" or " · Elite All")
-    local dungSuffix = skipDungeons and " · No Dung" or " · Dung On"
+    local dungSuffix = (player and player.inInstance) and " · Dung Active" or (skipDungeons and " · No Dung" or " · Dung On")
     local modeLabel = ((cdb.toggles and cdb.toggles.dynamicRescore)
         and (ns.GetPresetLabel(cdb.activeProfile or "custom") .. " · Live")
         or ns.GetPresetLabel(cdb.activeProfile or "balanced"))
@@ -224,7 +229,8 @@ function HUD.GetViewModel()
 
     if step then
         local am = ns.GetActionMeta(step.action)
-        local coords = (step.x and step.y) and ns.FormatCoords(step.x, step.y) or "No coords"
+        local coords = (step.x and step.y) and ns.FormatCoords(step.x, step.y)
+            or ((step.isInsideDungeonTarget or step.isInDungeon) and "Inside Dungeon" or "No coords")
         local whereParts = {}
         if step.npcName and step.npcName ~= "" then
             whereParts[#whereParts + 1] = step.npcName

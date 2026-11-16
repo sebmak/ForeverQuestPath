@@ -42,15 +42,22 @@
 --      reorderedStepCache, pure-Lua linear min+sticky selection without
 --      table.sort callbacks, staticDist in RouteDistCoord, O(1) single-quest
 --      fast paths, complete inline single-quest DAG check, and prereqWatchers/
---      exclWatchers-targeted invalidation), proactive full-chain expansion &
---      zero-FNEW iterative chain collection with monotonic [-3..maxValidOff]
---      negative-span seeding, [minOff, maxOff] span-seeded decCache.byMaxOff +
---      playerRef fast-path + _rawChainStep-canonical decCache.byStepBadge step
---      clone reuse and epoch/offset-span stamped zero-alloc dynamic step
---      decoration, zero-alloc friend-meetup off-route chain pivoting with
---      scratch candidate selection & fPairDist caching, pInfo/playerHint
---      forwarding into GetCurrentStep + in-place cache wrapper reuse, class-
---      quest injection, deviation/skip handling, step history, and Nav routing.
+--      exclWatchers-targeted invalidation), automatic in-dungeon quest routing
+--      via ResolveActiveDungeon / State.GetActiveDungeonPlan (prioritizing
+--      that dungeon's ready in-dungeon turn-ins, available in-dungeon pickups,
+--      active incomplete objectives, follow-up chains, post-run outdoor
+--      turn-ins, and shareable dungeon quests when zoned inside an instance,
+--      overriding skipDungeons/skipEliteSolo/maxLevelOffset while preserving
+--      instance context across dead/ghost wipe corpse runs), proactive
+--      full-chain expansion & zero-FNEW iterative chain collection with monotonic
+--      [-3..maxValidOff] negative-span seeding, [minOff, maxOff] span-seeded
+--      decCache.byMaxOff + playerRef fast-path + _rawChainStep-canonical
+--      decCache.byStepBadge step clone reuse and epoch/offset-span stamped
+--      zero-alloc dynamic step decoration, zero-alloc friend-meetup off-route
+--      chain pivoting with scratch candidate selection & fPairDist caching,
+--      pInfo/playerHint forwarding into GetCurrentStep + in-place cache wrapper
+--      reuse, class-quest injection, deviation/skip handling, step history, and
+--      Nav routing.
 --   4. Enforces strict live eligibility guards (factionMask, raceMask, classMask,
 --      memoized IsEligibleForPlayer, minLevel, prereqIds, configurable
 --      questLevel <= playerLevel + maxLevelOffset cap defaulting to +2 with
@@ -383,6 +390,49 @@ local perfScratch = {
     optPathCands = {},
     optPathCosts = {},
     optPathReadyImm = {},
+    instIdToDungeon = {
+        [33]   = "shadowfang-keep",
+        [34]   = "the-stockade",
+        [36]   = "the-deadmines",
+        [43]   = "wailing-caverns",
+        [47]   = "razorfen-kraul",
+        [48]   = "blackfathom-deeps",
+        [70]   = "uldaman",
+        [90]   = "gnomeregan",
+        [109]  = "the-temple-of-atal-hakkar",
+        [129]  = "razorfen-downs",
+        [189]  = "scarlet-monastery",
+        [209]  = "zul-farrak", -- DBC InstanceID 209 = Zul'Farrak (AreaID 209 = Shadowfang Keep)
+        [229]  = "blackrock-spire",
+        [230]  = "blackrock-depths",
+        [289]  = "scholomance",
+        [329]  = "stratholme",
+        [349]  = "maraudon",
+        [389]  = "ragefire-chasm",
+        [429]  = "dire-maul",
+        [2959] = "city-of-dalaran",
+        [2970] = "the-drowned-city",
+        [2974] = "blackmaw-hold",
+        [2994] = "alcaz-prison",
+        [2998] = "excavation-site-wetlands",
+        [2999] = "ruins-of-lordaeron",
+        [3001] = "the-shapers-terrace",
+        [3039] = "krol-dok-stronghold",
+        [3065] = "hall-of-thanes",
+    },
+    dungeonByName = {},
+    dungeonByZoneId = {},
+    dungeonPlanCache = nil,
+    lastObservedInInstance = nil,
+    lastObservedInstMapId = nil,
+    lastObservedInstName = nil,
+    inDungCandQids = {},
+    inDungCandSeen = {},
+    inDungExtraQids = {},
+    inDungVComp = {},
+    inDungVAct = {},
+    inDungIncQids = {},
+    inDungOutQids = {},
 }
 local decCache = {
     byMaxOff = {},
@@ -598,6 +648,7 @@ local function BumpGeneration(keepChainCache, refreshProfessions, keepDbQuestCac
         locationPlanCache.gen = -1
         locationPlanCache.plan = nil
     end
+    perfScratch.dungeonPlanCache = nil
     if currentStepCache then
         currentStepCache.gen = -1
         currentStepCache.step = nil
@@ -704,7 +755,22 @@ function State.BuildIndexes()
         table.insert(questToDungeons[qid], dungeonId)
     end
 
+    perfScratch.dungeonByName = {}
+    perfScratch.dungeonByZoneId = {}
+    perfScratch.dungeonPlanCache = nil
+
     for dungeonId, d in pairs(data.dungeons or {}) do
+        if d.zoneId then
+            perfScratch.dungeonByZoneId[tonumber(d.zoneId) or d.zoneId] = dungeonId
+        end
+        if type(d.name) == "string" and d.name ~= "" then
+            local lowName = string.lower((d.name:gsub("^%s+", ""):gsub("%s+$", "")))
+            perfScratch.dungeonByName[lowName] = perfScratch.dungeonByName[lowName] or dungeonId
+            local noThe = lowName:gsub("^the%s+", "")
+            if noThe ~= "" then
+                perfScratch.dungeonByName[noThe] = perfScratch.dungeonByName[noThe] or dungeonId
+            end
+        end
         for _, qid in ipairs(d.questIds or {}) do
             LinkQuestDungeon(qid, dungeonId)
         end
@@ -714,6 +780,20 @@ function State.BuildIndexes()
             end
         end
     end
+
+    perfScratch.dungeonByName["stormwind stockade"] = perfScratch.dungeonByName["stormwind stockade"] or "the-stockade"
+    perfScratch.dungeonByName["stockade"] = perfScratch.dungeonByName["stockade"] or "the-stockade"
+    perfScratch.dungeonByName["deadmines"] = perfScratch.dungeonByName["deadmines"] or "the-deadmines"
+    perfScratch.dungeonByName["sunken temple"] = perfScratch.dungeonByName["sunken temple"] or "the-temple-of-atal-hakkar"
+    perfScratch.dungeonByName["atal'hakkar"] = perfScratch.dungeonByName["atal'hakkar"] or "the-temple-of-atal-hakkar"
+    perfScratch.dungeonByName["the temple of atal'hakkar"] = perfScratch.dungeonByName["the temple of atal'hakkar"] or "the-temple-of-atal-hakkar"
+    perfScratch.dungeonByName["lower blackrock spire"] = perfScratch.dungeonByName["lower blackrock spire"] or "blackrock-spire"
+    perfScratch.dungeonByName["upper blackrock spire"] = perfScratch.dungeonByName["upper blackrock spire"] or "blackrock-spire"
+    perfScratch.dungeonByName["excavation site"] = perfScratch.dungeonByName["excavation site"] or "excavation-site-wetlands"
+    perfScratch.dungeonByName["excavation site: wetlands"] = perfScratch.dungeonByName["excavation site: wetlands"] or "excavation-site-wetlands"
+    perfScratch.dungeonByName["shaper's terrace"] = perfScratch.dungeonByName["shaper's terrace"] or "the-shapers-terrace"
+    perfScratch.dungeonByName["hall of thanes"] = perfScratch.dungeonByName["hall of thanes"] or "hall-of-thanes"
+    perfScratch.dungeonByName["the hall of thanes"] = perfScratch.dungeonByName["the hall of thanes"] or "hall-of-thanes"
 
     for qid, q in pairs(data.quests or {}) do
         if q.dungeonId then
@@ -743,6 +823,9 @@ function State.InvalidateIndexes()
     composedRoutesCache = {}
     composedRoutesDataRef = nil
     turninResolveCache = {}
+    perfScratch.dungeonByName = {}
+    perfScratch.dungeonByZoneId = {}
+    perfScratch.dungeonPlanCache = nil
     BumpGeneration()
 end
 
@@ -1299,6 +1382,26 @@ function State.GetPlayerInfo()
     local deadNow = (ns.IsPlayerDeadOrGhost and ns.IsPlayerDeadOrGhost()) and true or false
     local onTaxiNow = (UnitOnTaxi and UnitOnTaxi("player")) and true or false
     local inGroupNow = (ns.IsPlayerInGroup and ns.IsPlayerInGroup()) and true or false
+    local inDungeonInst, instName, instMapId = false, nil, nil
+    if ns.GetPlayerInstanceState then
+        inDungeonInst, instName, instMapId = ns.GetPlayerInstanceState()
+    end
+    local activeDungeonId = nil
+    if inDungeonInst and not deadNow then
+        State.BuildIndexes()
+        local data = ns.GetData()
+        local realZText = GetRealZoneText and GetRealZoneText() or nil
+        local dgKey, activeDg = perfScratch.ResolveActiveDungeon(
+            true, instMapId, instName, realZText, mapInfo and mapInfo.name, subZoneName, zoneId, data
+        )
+        activeDungeonId = dgKey
+        if activeDg then
+            zoneId = activeDg.zoneId or zoneId
+            zoneName = activeDg.name or instName or zoneName
+        elseif instName and instName ~= "" then
+            zoneName = instName
+        end
+    end
 
     if not deadNow then
         deadBootLocation = nil
@@ -1310,6 +1413,8 @@ function State.GetPlayerInfo()
         lastAliveLocation.zoneId = zoneId
         lastAliveLocation.zoneName = zoneName
         lastAliveLocation.subZoneName = subZoneName
+        lastAliveLocation.inInstance = inDungeonInst
+        lastAliveLocation.activeDungeonId = activeDungeonId
         if px and py then
             lastAliveLocation.x = px
             lastAliveLocation.y = py
@@ -1325,7 +1430,24 @@ function State.GetPlayerInfo()
         subZoneName = lastAliveLocation.subZoneName
         px = lastAliveLocation.x
         py = lastAliveLocation.y
+        inDungeonInst = (lastAliveLocation.inInstance == true)
+        activeDungeonId = lastAliveLocation.activeDungeonId
     else
+        if inDungeonInst then
+            State.BuildIndexes()
+            local data = ns.GetData()
+            local realZText = GetRealZoneText and GetRealZoneText() or nil
+            local dgKey, activeDg = perfScratch.ResolveActiveDungeon(
+                true, instMapId, instName, realZText, mapInfo and mapInfo.name, subZoneName, zoneId, data
+            )
+            activeDungeonId = dgKey
+            if activeDg then
+                zoneId = activeDg.zoneId or zoneId
+                zoneName = activeDg.name or instName or zoneName
+            elseif instName and instName ~= "" then
+                zoneName = instName
+            end
+        end
         if not deadBootLocation then
             deadBootLocation = {
                 uiMapId = uiMapId,
@@ -1334,6 +1456,8 @@ function State.GetPlayerInfo()
                 subZoneName = subZoneName,
                 x = px,
                 y = py,
+                inInstance = inDungeonInst,
+                activeDungeonId = activeDungeonId,
             }
         else
             uiMapId = deadBootLocation.uiMapId
@@ -1342,6 +1466,8 @@ function State.GetPlayerInfo()
             subZoneName = deadBootLocation.subZoneName
             px = deadBootLocation.x
             py = deadBootLocation.y
+            inDungeonInst = (deadBootLocation.inInstance == true)
+            activeDungeonId = deadBootLocation.activeDungeonId
         end
     end
 
@@ -1380,6 +1506,8 @@ function State.GetPlayerInfo()
         and pc.isDead == deadNow
         and pc.onTaxi == onTaxiNow
         and pc.inGroup == inGroupNow
+        and pc.inInstance == inDungeonInst
+        and pc.activeDungeonId == activeDungeonId
         and pc.hasSkinning == prof.hasSkinning
         and pc.hasLeatherworking == prof.hasLeatherworking
         and pc.skinningRank == prof.skinningRank
@@ -1424,6 +1552,8 @@ function State.GetPlayerInfo()
         isDead = deadNow,
         onTaxi = onTaxiNow,
         inGroup = inGroupNow,
+        inInstance = inDungeonInst,
+        activeDungeonId = activeDungeonId,
         hasSkinning = prof.hasSkinning,
         hasLeatherworking = prof.hasLeatherworking,
         skinningRank = prof.skinningRank,
@@ -5075,13 +5205,33 @@ local function ResolveLiveLocation(uiMapId, rawGx, rawGy)
     return zoneId, px, py
 end
 
-local function ShouldTriggerGpsMove(zoneId, px, py, nowSec, force)
+local function ShouldTriggerGpsMove(zoneId, px, py, nowSec, force, inInstNow, instMapIdNow, instNameNow)
+    if inInstNow == nil and ns.GetPlayerInstanceState then
+        inInstNow, instNameNow, instMapIdNow = ns.GetPlayerInstanceState()
+    end
+    local instChanged = false
+    if perfScratch.lastObservedInInstance ~= nil then
+        if (inInstNow == true) ~= (perfScratch.lastObservedInInstance == true) then
+            instChanged = true
+        elseif inInstNow and (instMapIdNow ~= perfScratch.lastObservedInstMapId or instNameNow ~= perfScratch.lastObservedInstName) then
+            instChanged = true
+        end
+    elseif inInstNow then
+        instChanged = true
+    end
+    if force or instChanged then
+        return true, (instChanged or (zoneId ~= nil and lastTrackedZoneId ~= nil and zoneId ~= lastTrackedZoneId))
+    end
+    if inInstNow then
+        -- Suppress idle/walking ticks while remaining inside the same instance.
+        return false, false
+    end
     if not zoneId and not px then
         return false, false
     end
     local zoneChanged = (zoneId ~= nil) and (lastTrackedZoneId ~= nil) and (zoneId ~= lastTrackedZoneId)
     local firstInit = (lastTrackedZoneId == nil and zoneId ~= nil)
-    if force or firstInit or zoneChanged then
+    if firstInit or zoneChanged then
         return true, zoneChanged
     end
     if not (px and py) then
@@ -5143,14 +5293,24 @@ function State.CheckLivePosition(force)
     end
 
     local uiMapId, rawGx, rawGy = ReadRawMapAndCoords()
-    if (not force) and lastRawInit and uiMapId == lastRawUiMapId and rawGx == lastRawGx and rawGy == lastRawGy then
+    local inInstNow, instNameNow, instMapIdNow = false, nil, nil
+    if ns.GetPlayerInstanceState then
+        inInstNow, instNameNow, instMapIdNow = ns.GetPlayerInstanceState()
+    end
+    local sameInst = (perfScratch.lastObservedInInstance == inInstNow)
+        and ((not inInstNow) or (instMapIdNow == perfScratch.lastObservedInstMapId and instNameNow == perfScratch.lastObservedInstName))
+    if (not force) and sameInst and lastRawInit and uiMapId == lastRawUiMapId and rawGx == lastRawGx and rawGy == lastRawGy then
         return false
     end
 
     State.BuildIndexes()
     local zoneId, px, py = ResolveLiveLocation(uiMapId, rawGx, rawGy)
     local nowSec = GetTime and tonumber(GetTime()) or nil
-    local shouldRun, zoneChanged = ShouldTriggerGpsMove(zoneId, px, py, nowSec, force)
+    local shouldRun, zoneChanged = ShouldTriggerGpsMove(zoneId, px, py, nowSec, force, inInstNow, instMapIdNow, instNameNow)
+
+    perfScratch.lastObservedInInstance = inInstNow
+    perfScratch.lastObservedInstMapId = instMapIdNow
+    perfScratch.lastObservedInstName = instNameNow
 
     if shouldRun then
         lastTrackedZoneId = zoneId or lastTrackedZoneId
@@ -8507,11 +8667,592 @@ function State.AdvanceRouteCursor()
     return cursor
 end
 
+function perfScratch.MatchDungeonName(rawName)
+    if type(rawName) ~= "string" or rawName == "" then
+        return nil
+    end
+    local low = string.lower((rawName:gsub("^%s+", ""):gsub("%s+$", "")))
+    if low == "" then
+        return nil
+    end
+    local byName = perfScratch.dungeonByName
+    if byName[low] then
+        return byName[low]
+    end
+    local noThe = low:gsub("^the%s+", "")
+    if byName[noThe] then
+        return byName[noThe]
+    end
+    local wingPrefix = low:match("^(.-)%s+%-%s+.+$")
+    if wingPrefix and wingPrefix ~= "" then
+        if byName[wingPrefix] then
+            return byName[wingPrefix]
+        end
+        local wingNoThe = wingPrefix:gsub("^the%s+", "")
+        if byName[wingNoThe] then
+            return byName[wingNoThe]
+        end
+    end
+    return nil
+end
+
+function perfScratch.ResolveActiveDungeon(inInst, instMapId, instName, realZoneName, mapZoneName, subZoneName, resolvedZoneId, data)
+    if not inInst then
+        return nil, nil
+    end
+    local dungeons = data and data.dungeons or nil
+    if instMapId and perfScratch.instIdToDungeon[instMapId] then
+        local key = perfScratch.instIdToDungeon[instMapId]
+        if dungeons and dungeons[key] then
+            return key, dungeons[key]
+        end
+    end
+    local byNameKey = perfScratch.MatchDungeonName(instName)
+        or perfScratch.MatchDungeonName(realZoneName)
+        or perfScratch.MatchDungeonName(mapZoneName)
+        or perfScratch.MatchDungeonName(subZoneName)
+    if byNameKey and dungeons and dungeons[byNameKey] then
+        return byNameKey, dungeons[byNameKey]
+    end
+    if resolvedZoneId and perfScratch.dungeonByZoneId[resolvedZoneId] then
+        local key = perfScratch.dungeonByZoneId[resolvedZoneId]
+        if dungeons and dungeons[key] then
+            return key, dungeons[key]
+        end
+    end
+    return "__instance__:" .. tostring(instMapId or instName or realZoneName or "unknown"), nil
+end
+
+function perfScratch.IsPointInsideDungeon(pt, dg)
+    if not dg then
+        return not (pt and pt.x and pt.y)
+    end
+    if not pt or not pt.zoneId then
+        return true
+    end
+    if dg.zoneId and pt.zoneId == dg.zoneId then
+        return true
+    end
+    if dg.entranceZoneId and pt.zoneId == dg.entranceZoneId then
+        if not pt.x or not pt.y then
+            return true
+        end
+        local ec = dg.entranceCoords
+        if ec and ec.x and ec.y then
+            local d = TurninDist(pt.x, pt.y, ec.x, ec.y)
+            if d and d <= 1.5 then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function perfScratch.IsInDungeonStepSkippedOrDone(action, qid)
+    local gKey = "gps:" .. tostring(action) .. ":" .. tostring(qid)
+    if IsGpsStepSkippedOrDone(gKey) then
+        return true
+    end
+    if action == "TURN_IN" and ns.charDB then
+        local rKey = "ready_turnin:" .. tostring(qid)
+        if (ns.charDB.skippedSteps and ns.charDB.skippedSteps[rKey])
+            or (ns.charDB.completedCustomSteps and ns.charDB.completedCustomSteps[rKey]) then
+            return true
+        end
+    end
+    return false
+end
+
+function perfScratch.IsQuestExcludedInDungeon(qid, q, completedMap, vComp, vAct)
+    if State.IsQuestExcluded(qid, true) then
+        return true
+    end
+    if q and type(q.exclusiveTo) == "table" then
+        for _, oid in ipairs(q.exclusiveTo) do
+            if oid ~= qid and (completedMap[oid] or vComp[oid] or vAct[oid] ~= nil or State.IsQuestCompleted(oid, true)) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function perfScratch.IsDungeonQuestAvailable(qid, q, player, completedMap, vComp, vAct)
+    if not q then
+        return false
+    end
+    if completedMap[qid] or vComp[qid] or activeQuests[qid] ~= nil or vAct[qid] ~= nil then
+        return false
+    end
+    if State.IsQuestCompleted(qid, true) then
+        return false
+    end
+    if not State.IsEligibleForPlayer(qid, player) then
+        return false
+    end
+    if q.requiredSkill then
+        local prof = (player and player.professions) or State.DetectProfessions()
+        if IsRequiredSkillBlocked(q.requiredSkill, prof, true) then
+            return false
+        end
+    end
+    if perfScratch.IsQuestExcludedInDungeon(qid, q, completedMap, vComp, vAct) then
+        return false
+    end
+    if (tonumber(q.minLevel) or 1) > (tonumber(player and player.level) or 1) then
+        return false
+    end
+    if not State.ArePrereqsMet(qid, vComp, true) then
+        return false
+    end
+    return true
+end
+
+function perfScratch.MakeInDungeonStep(q, qid, action, player, dgKey, dg, dgName, dgZoneId, insideTarget, isReady, whyText, data)
+    local resolvedFallback = (not q) and State.ResolveQuestTurnin(qid) or nil
+    local pt = GetQuestStepPoint(q, action, resolvedFallback)
+    local activeEntry = activeQuests and activeQuests[qid]
+    local qName = (q and q.name) or (resolvedFallback and resolvedFallback.title) or (activeEntry and activeEntry.title) or ("Quest #" .. tostring(qid))
+    local zId, zName, x, y, npcId, npcName
+    if insideTarget then
+        zId = dgZoneId or (pt and pt.zoneId) or (player and player.zoneId)
+        zName = dgName
+        x = nil
+        y = nil
+        if action ~= "COMPLETE" then
+            npcId = pt and pt.npcId or nil
+            npcName = pt and pt.npcName or nil
+        end
+    else
+        zId = (pt and pt.zoneId) or (q and q.zoneId) or (player and player.zoneId)
+        zName = (pt and pt.zoneName) or ResolveZoneNameById(zId, q and q.zoneName, data)
+        x = pt and pt.x or nil
+        y = pt and pt.y or nil
+        if action ~= "COMPLETE" then
+            npcId = pt and pt.npcId or nil
+            npcName = pt and pt.npcName or nil
+        end
+    end
+    local actionLabel = (action == "ACCEPT" and "Accept")
+        or (action == "COMPLETE" and "Complete")
+        or (action == "TURN_IN" and "Turn In")
+        or tostring(action)
+    local badges = MakeGpsBadges(q, false, data)
+    badges.isGpsReordered = false
+    badges.isInDungeon = true
+    badges.isDungeon = true
+    badges.isReadyTurnIn = (isReady == true)
+    return {
+        action = action,
+        questId = qid,
+        questIds = { qid },
+        title = actionLabel .. ": " .. qName,
+        zoneId = zId,
+        zoneName = zName,
+        x = x,
+        y = y,
+        npcId = npcId,
+        npcName = npcName,
+        expectedLevel = (q and (q.questLevel or q.minLevel)) or (activeEntry and activeEntry.level) or (player and player.level),
+        xp = (q and q.xp) or 0,
+        money = (q and (q.goldCopper or q.money)) or 0,
+        bagSlots = (q and q.bagSlots) or 0,
+        badges = badges,
+        why = whyText or string.format("[In Dungeon] %s (%s)", actionLabel, dgName),
+        isDynamic = true,
+        isGpsReordered = true,
+        isInDungeon = true,
+        isDungeon = true,
+        isInsideDungeonTarget = (insideTarget == true),
+        isReadyTurnIn = (isReady == true),
+        readyStepKey = isReady and ("ready_turnin:" .. tostring(qid)) or nil,
+        dungeonId = dg and dgKey or nil,
+        gpsStepKey = "gps:" .. tostring(action) .. ":" .. tostring(qid),
+    }
+end
+
+function State.GetActiveDungeonPlan(player, toggles)
+    player = player or playerCache or State.GetPlayerInfo()
+    if not (player and player.inInstance == true and player.activeDungeonId) then
+        return nil
+    end
+    if player.onTaxi or (UnitOnTaxi and UnitOnTaxi("player")) then
+        return nil
+    end
+
+    local dgKey = player.activeDungeonId
+    local pLevel = tonumber(player.level) or 24
+    local skinRank = tonumber(player.skinningRank) or -1
+    local lwRank = tonumber(player.leatherworkingRank) or -1
+    local cache = perfScratch.dungeonPlanCache
+    if cache
+        and cache.gen == refreshGeneration
+        and cache.sGen == questStateGeneration
+        and cache.dungeonId == dgKey
+        and cache.level == pLevel
+        and cache.faction == player.faction
+        and cache.raceId == player.raceId
+        and cache.classId == player.classId
+        and cache.skinRank == skinRank
+        and cache.lwRank == lwRank then
+        return cache.plan
+    end
+
+    State.BuildIndexes()
+    local data = ns.GetData()
+    local quests = data and data.quests or {}
+    local dg = data and data.dungeons and data.dungeons[dgKey] or nil
+    local dgName = (dg and dg.name) or player.zoneName or "Dungeon"
+    local dgZoneId = (dg and dg.zoneId) or player.zoneId
+
+    local candQids = perfScratch.inDungCandQids
+    local candSeen = WipeMap(perfScratch.inDungCandSeen)
+    local candCount = 0
+
+    if dg and type(dg.questIds) == "table" then
+        for _, qid in ipairs(dg.questIds) do
+            if qid and not candSeen[qid] then
+                candSeen[qid] = true
+                candCount = candCount + 1
+                candQids[candCount] = qid
+            end
+        end
+    end
+
+    local extraQids = perfScratch.inDungExtraQids
+    local extraCount = 0
+    if dg and dg.zoneId and zoneQuestsIndex[dg.zoneId] then
+        for _, qid in ipairs(zoneQuestsIndex[dg.zoneId]) do
+            if qid and not candSeen[qid] then
+                candSeen[qid] = true
+                extraCount = extraCount + 1
+                extraQids[extraCount] = qid
+            end
+        end
+    end
+    for qid, entry in pairs(activeQuests) do
+        if qid and entry and not candSeen[qid] then
+            local q = quests[qid]
+            local belongs = (q and (q.dungeonId == dgKey or (dg and dg.zoneId and q.zoneId == dg.zoneId)))
+                or ((not dg) and (State.IsQuestDungeon(qid, q) or entry.isDungeon == true))
+            if belongs then
+                candSeen[qid] = true
+                extraCount = extraCount + 1
+                extraQids[extraCount] = qid
+            end
+        end
+    end
+    if extraCount > 1 then
+        for trim = #extraQids, extraCount + 1, -1 do
+            extraQids[trim] = nil
+        end
+        table.sort(extraQids)
+    end
+    for i = 1, extraCount do
+        candCount = candCount + 1
+        candQids[candCount] = extraQids[i]
+    end
+    for trim = #candQids, candCount + 1, -1 do
+        candQids[trim] = nil
+    end
+
+    local completedMap = State.GetCompletedReadOnly()
+    local vComp = WipeMap(perfScratch.inDungVComp)
+    local vAct = WipeMap(perfScratch.inDungVAct)
+    for i = 1, candCount do
+        local qid = candQids[i]
+        local entry = activeQuests[qid]
+        if entry and not completedMap[qid] and not State.IsQuestCompleted(qid, true) then
+            vAct[qid] = {
+                isComplete = (entry.isComplete == true),
+                isFailed = (entry.isFailed == true),
+                fromLog = true,
+            }
+        end
+    end
+
+    local outSteps = {}
+
+    -- Phase 1: Ready in-dungeon turn-ins first
+    for i = 1, candCount do
+        local qid = candQids[i]
+        local va = vAct[qid]
+        if va and va.isComplete and not va.isFailed then
+            local q = quests[qid]
+            local turnPt = GetQuestStepPoint(q, "TURN_IN", (not q) and State.ResolveQuestTurnin(qid) or nil)
+            if perfScratch.IsPointInsideDungeon(turnPt, dg) then
+                if not perfScratch.IsInDungeonStepSkippedOrDone("TURN_IN", qid) then
+                    outSteps[#outSteps + 1] = perfScratch.MakeInDungeonStep(
+                        q, qid, "TURN_IN", player, dgKey, dg, dgName, dgZoneId, true, true,
+                        string.format("[In Dungeon] Ready to turn in inside %s", dgName), data
+                    )
+                end
+                vAct[qid] = nil
+                vComp[qid] = true
+            end
+        end
+    end
+
+    -- Phase 2: Available unaccepted quests whose starters are inside this dungeon
+    for _ = 1, 4 do
+        local progressed = false
+        for i = 1, candCount do
+            local qid = candQids[i]
+            local q = quests[qid]
+            if perfScratch.IsDungeonQuestAvailable(qid, q, player, completedMap, vComp, vAct) then
+                local startPt = GetQuestStepPoint(q, "ACCEPT")
+                if perfScratch.IsPointInsideDungeon(startPt, dg) then
+                    if not perfScratch.IsInDungeonStepSkippedOrDone("ACCEPT", qid) then
+                        outSteps[#outSteps + 1] = perfScratch.MakeInDungeonStep(
+                            q, qid, "ACCEPT", player, dgKey, dg, dgName, dgZoneId, true, false,
+                            string.format("[In Dungeon] Available inside %s", dgName), data
+                        )
+                    end
+                    local turnPt = GetQuestStepPoint(q, "TURN_IN")
+                    local hasObj = QuestHasObjectives(q, nil)
+                    if (not hasObj) and perfScratch.IsPointInsideDungeon(turnPt, dg) then
+                        if not perfScratch.IsInDungeonStepSkippedOrDone("TURN_IN", qid) then
+                            outSteps[#outSteps + 1] = perfScratch.MakeInDungeonStep(
+                                q, qid, "TURN_IN", player, dgKey, dg, dgName, dgZoneId, true, false,
+                                string.format("[In Dungeon] Turn in inside %s", dgName), data
+                            )
+                        end
+                        vComp[qid] = true
+                    else
+                        local autoDone = (not hasObj) and (q.isBreadcrumb == true)
+                        vAct[qid] = { isComplete = autoDone, isFailed = false, fromLog = false }
+                    end
+                    progressed = true
+                end
+            end
+        end
+        if not progressed then
+            break
+        end
+    end
+
+    -- Phase 3: Active/accepted incomplete quests inside this dungeon + in-dungeon follow-up chains
+    for _ = 1, 6 do
+        local incQids = perfScratch.inDungIncQids
+        local incCount = 0
+        for i = 1, candCount do
+            local qid = candQids[i]
+            local va = vAct[qid]
+            if va and (not va.isComplete) and (not va.isFailed) then
+                incCount = incCount + 1
+                incQids[incCount] = qid
+            end
+        end
+        if incCount == 0 then
+            break
+        end
+        for trim = #incQids, incCount + 1, -1 do
+            incQids[trim] = nil
+        end
+        if incCount > 1 then
+            table.sort(incQids, function(a, b)
+                local qa = quests[a]
+                local qb = quests[b]
+                local la = (qa and tonumber(qa.questLevel or qa.minLevel)) or (activeQuests[a] and tonumber(activeQuests[a].level)) or 0
+                local lb = (qb and tonumber(qb.questLevel or qb.minLevel)) or (activeQuests[b] and tonumber(activeQuests[b].level)) or 0
+                if la ~= lb then return la < lb end
+                return a < b
+            end)
+        end
+        local unlockedAny = false
+        for idx = 1, incCount do
+            local qid = incQids[idx]
+            local va = vAct[qid]
+            local q = quests[qid]
+            if not perfScratch.IsInDungeonStepSkippedOrDone("COMPLETE", qid) then
+                outSteps[#outSteps + 1] = perfScratch.MakeInDungeonStep(
+                    q, qid, "COMPLETE", player, dgKey, dg, dgName, dgZoneId, true, false,
+                    string.format("[In Dungeon] Complete objectives inside %s", dgName), data
+                )
+            end
+            va.isComplete = true
+            local turnPt = GetQuestStepPoint(q, "TURN_IN", (not q) and State.ResolveQuestTurnin(qid) or nil)
+            if perfScratch.IsPointInsideDungeon(turnPt, dg) then
+                if not perfScratch.IsInDungeonStepSkippedOrDone("TURN_IN", qid) then
+                    outSteps[#outSteps + 1] = perfScratch.MakeInDungeonStep(
+                        q, qid, "TURN_IN", player, dgKey, dg, dgName, dgZoneId, true, false,
+                        string.format("[In Dungeon] Turn in inside %s", dgName), data
+                    )
+                end
+                vAct[qid] = nil
+                vComp[qid] = true
+                for cIdx = 1, candCount do
+                    local cqid = candQids[cIdx]
+                    local cq = quests[cqid]
+                    if perfScratch.IsDungeonQuestAvailable(cqid, cq, player, completedMap, vComp, vAct) then
+                        local startPt = GetQuestStepPoint(cq, "ACCEPT")
+                        if perfScratch.IsPointInsideDungeon(startPt, dg) then
+                            if not perfScratch.IsInDungeonStepSkippedOrDone("ACCEPT", cqid) then
+                                outSteps[#outSteps + 1] = perfScratch.MakeInDungeonStep(
+                                    cq, cqid, "ACCEPT", player, dgKey, dg, dgName, dgZoneId, true, false,
+                                    string.format("[In Dungeon] Follow-up inside %s", dgName), data
+                                )
+                            end
+                            local cTurnPt = GetQuestStepPoint(cq, "TURN_IN")
+                            local cHasObj = QuestHasObjectives(cq, nil)
+                            if (not cHasObj) and perfScratch.IsPointInsideDungeon(cTurnPt, dg) then
+                                if not perfScratch.IsInDungeonStepSkippedOrDone("TURN_IN", cqid) then
+                                    outSteps[#outSteps + 1] = perfScratch.MakeInDungeonStep(
+                                        cq, cqid, "TURN_IN", player, dgKey, dg, dgName, dgZoneId, true, false,
+                                        string.format("[In Dungeon] Turn in inside %s", dgName), data
+                                    )
+                                end
+                                vComp[cqid] = true
+                            else
+                                vAct[cqid] = { isComplete = ((not cHasObj) and (cq.isBreadcrumb == true)), isFailed = false, fromLog = false }
+                                unlockedAny = true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if not unlockedAny then
+            break
+        end
+    end
+
+    -- Phase 4: Ready & post-run outdoor turn-ins for this dungeon's quests
+    local outQids = perfScratch.inDungOutQids
+    local outCount = 0
+    for i = 1, candCount do
+        local qid = candQids[i]
+        local va = vAct[qid]
+        if va and va.isComplete and not va.isFailed then
+            outCount = outCount + 1
+            outQids[outCount] = qid
+        end
+    end
+    for trim = #outQids, outCount + 1, -1 do
+        outQids[trim] = nil
+    end
+    if outCount > 1 then
+        table.sort(outQids, function(a, b)
+            local fa = (vAct[a] and vAct[a].fromLog == true) and 1 or 0
+            local fb = (vAct[b] and vAct[b].fromLog == true) and 1 or 0
+            if fa ~= fb then return fa > fb end
+            local pa = GetQuestStepPoint(quests[a], "TURN_IN")
+            local pb = GetQuestStepPoint(quests[b], "TURN_IN")
+            local za = pa and tonumber(pa.zoneId) or 0
+            local zb = pb and tonumber(pb.zoneId) or 0
+            if za ~= zb then return za < zb end
+            return a < b
+        end)
+    end
+    for i = 1, outCount do
+        local qid = outQids[i]
+        local va = vAct[qid]
+        local q = quests[qid]
+        local isRealReady = (va and va.fromLog == true)
+        if not perfScratch.IsInDungeonStepSkippedOrDone("TURN_IN", qid) then
+            local turnPt = GetQuestStepPoint(q, "TURN_IN", (not q) and State.ResolveQuestTurnin(qid) or nil)
+            local outZName = (turnPt and (turnPt.zoneName or ResolveZoneNameById(turnPt.zoneId, q and q.zoneName, data))) or dgName
+            local whyMsg = isRealReady
+                and string.format("[Dungeon Complete] Ready to turn in (%s)", outZName)
+                or string.format("[After %s] Turn in (%s)", dgName, outZName)
+            outSteps[#outSteps + 1] = perfScratch.MakeInDungeonStep(
+                q, qid, "TURN_IN", player, dgKey, dg, dgName, dgZoneId, false, isRealReady, whyMsg, data
+            )
+        end
+        vAct[qid] = nil
+        vComp[qid] = true
+    end
+
+    -- Phase 5: Eligible outdoor-starter / shareable quests for this dungeon
+    local shareQids = outQids
+    local shareCount = 0
+    local entZone = dg and dg.entranceZoneId or nil
+    for i = 1, candCount do
+        local qid = candQids[i]
+        local q = quests[qid]
+        if perfScratch.IsDungeonQuestAvailable(qid, q, player, completedMap, vComp, vAct) then
+            local startPt = GetQuestStepPoint(q, "ACCEPT")
+            if not perfScratch.IsPointInsideDungeon(startPt, dg) then
+                shareCount = shareCount + 1
+                shareQids[shareCount] = qid
+            end
+        end
+    end
+    for trim = #shareQids, shareCount + 1, -1 do
+        shareQids[trim] = nil
+    end
+    if shareCount > 1 then
+        table.sort(shareQids, function(a, b)
+            local qa = quests[a]
+            local qb = quests[b]
+            local pa = GetQuestStepPoint(qa, "ACCEPT")
+            local pb = GetQuestStepPoint(qb, "ACCEPT")
+            local ea = (entZone and pa and pa.zoneId == entZone) and 1 or 0
+            local eb = (entZone and pb and pb.zoneId == entZone) and 1 or 0
+            if ea ~= eb then return ea > eb end
+            local la = (qa and tonumber(qa.questLevel or qa.minLevel)) or 0
+            local lb = (qb and tonumber(qb.questLevel or qb.minLevel)) or 0
+            if la ~= lb then return la < lb end
+            return a < b
+        end)
+    end
+    for i = 1, shareCount do
+        local qid = shareQids[i]
+        local q = quests[qid]
+        if not perfScratch.IsInDungeonStepSkippedOrDone("ACCEPT", qid) then
+            local startPt = GetQuestStepPoint(q, "ACCEPT")
+            local sZName = (startPt and (startPt.zoneName or ResolveZoneNameById(startPt.zoneId, q and q.zoneName, data))) or "outside"
+            outSteps[#outSteps + 1] = perfScratch.MakeInDungeonStep(
+                q, qid, "ACCEPT", player, dgKey, dg, dgName, dgZoneId, false, false,
+                string.format("[In Dungeon: %s] Ask party to share or pick up in %s", dgName, sZName), data
+            )
+        end
+    end
+
+    local resultPlan = (#outSteps > 0) and {
+        mode = "in_dungeon",
+        dungeonId = dgKey,
+        dungeonName = dgName,
+        zoneId = dgZoneId,
+        steps = outSteps,
+        suppressedOrigIdx = {},
+    } or nil
+
+    perfScratch.dungeonPlanCache = {
+        gen = refreshGeneration,
+        sGen = questStateGeneration,
+        dungeonId = dgKey,
+        level = pLevel,
+        faction = player.faction,
+        raceId = player.raceId,
+        classId = player.classId,
+        skinRank = skinRank,
+        lwRank = lwRank,
+        plan = resultPlan,
+    }
+    return resultPlan
+end
+
 local function ComputeCurrentStep(player, cdb, toggles, useDynamic)
     local steps, profile, pkey, isAdaptedChar = State.GetActiveProfileSteps()
     local cursor = State.AdvanceRouteCursor()
+    local dPlan = (not useDynamic) and player and player.inInstance and State.GetActiveDungeonPlan(player, toggles) or nil
     local plan = (not useDynamic) and State.GetReadyTurnInPlan(steps, cursor, player, pkey, toggles) or nil
-    local locPlan = (not useDynamic) and State.GetLocationAdaptedPlan(steps, cursor, player, pkey, toggles, plan) or nil
+    local locPlan = (not useDynamic) and (dPlan or State.GetLocationAdaptedPlan(steps, cursor, player, pkey, toggles, plan)) or nil
+
+    if dPlan and dPlan.steps and dPlan.steps[1] then
+        return State.DecorateStepChain(dPlan.steps[1], player, toggles), {
+            source = "in_dungeon",
+            profileKey = pkey,
+            profile = profile,
+            stepIndex = cursor,
+            totalSteps = #steps,
+            readyPlan = plan,
+            readyCount = plan and plan.readyCount or State.GetReadyTurnInCount(),
+            locationPlan = dPlan,
+            locationPos = 1,
+        }
+    end
 
     if (not useDynamic) and plan and plan.immediate and plan.immediate[1] then
         return State.DecorateStepChain(plan.immediate[1], player, toggles), {
@@ -8678,6 +9419,8 @@ function State.GetCurrentStep(playerHint)
         and cs.isDead == player.isDead
         and cs.onTaxi == player.onTaxi
         and cs.inGroup == player.inGroup
+        and cs.inInstance == (player.inInstance == true)
+        and cs.activeDungeonId == player.activeDungeonId
         and cs.raceId == player.raceId
         and cs.classId == player.classId
         and cs.faction == player.faction
@@ -8728,6 +9471,8 @@ function State.GetCurrentStep(playerHint)
     csOut.isDead = player.isDead
     csOut.onTaxi = player.onTaxi
     csOut.inGroup = player.inGroup
+    csOut.inInstance = (player.inInstance == true)
+    csOut.activeDungeonId = player.activeDungeonId
     csOut.raceId = player.raceId
     csOut.classId = player.classId
     csOut.faction = player.faction
@@ -8861,7 +9606,7 @@ function State.GetUpcomingSteps(limit)
                 if not PushStep(rb[i]) then return out, meta end
             end
         end
-    elseif meta.source == "gps_reorder" or meta.source == "friend_pivot" then
+    elseif meta.source == "in_dungeon" or meta.source == "gps_reorder" or meta.source == "friend_pivot" then
         if locPlan and locPlan.steps then
             local startPos = (meta.locationPos or 1) + 1
             for i = startPos, #locPlan.steps do
@@ -8954,6 +9699,16 @@ function State.GetDeviationStatus()
     if meta.source == "dynamic" then
         return { deviated = false, dynamicActive = true, reason = "Live DAG Re-Scorer active" }
     end
+    if meta.source == "in_dungeon" then
+        local dName = (meta.locationPlan and meta.locationPlan.dungeonName) or player.zoneName or "Instance"
+        return {
+            deviated = false,
+            gpsAdapted = true,
+            gpsMode = "in_dungeon",
+            inDungeon = true,
+            reason = "In Dungeon: " .. tostring(dName),
+        }
+    end
     if meta.source == "friend_pivot" or meta.source == "gps_reorder" then
         return {
             deviated = false,
@@ -8983,13 +9738,13 @@ function State.SkipCurrentStep()
     local step, meta = State.GetCurrentStep()
     if not step then return end
 
-    if meta.source == "ready_turnin" or (step.isReadyTurnIn and step.readyStepKey and meta.source ~= "route") then
+    if meta.source == "ready_turnin" or (step.isReadyTurnIn and step.readyStepKey and meta.source ~= "route" and meta.source ~= "in_dungeon") then
         local rKey = step.readyStepKey or (step.questId and ("ready_turnin:" .. tostring(step.questId)))
         if rKey then
             ns.charDB.skippedSteps[rKey] = true
             table.insert(readyHistory, rKey)
         end
-    elseif meta.source == "gps_reorder" or meta.source == "friend_pivot" then
+    elseif meta.source == "in_dungeon" or meta.source == "gps_reorder" or meta.source == "friend_pivot" then
         if step.origRouteIdx then
             local steps = State.GetActiveProfileSteps()
             local origStep = steps[step.origRouteIdx]
@@ -9057,7 +9812,7 @@ function State.MarkCurrentStepComplete()
             ns.charDB.completedCustomSteps[rKey] = true
             table.insert(readyHistory, rKey)
         end
-    elseif meta.source == "gps_reorder" or meta.source == "friend_pivot" then
+    elseif meta.source == "in_dungeon" or meta.source == "gps_reorder" or meta.source == "friend_pivot" then
         if step.origRouteIdx then
             local steps = State.GetActiveProfileSteps()
             local origStep = steps[step.origRouteIdx]
@@ -9227,6 +9982,7 @@ function State.ResetProgress()
         locationPlanCache.gen = -1
         locationPlanCache.plan = nil
     end
+    perfScratch.dungeonPlanCache = nil
     if currentStepCache then
         currentStepCache.gen = -1
         currentStepCache.step = nil
@@ -9253,6 +10009,9 @@ function State.ResetProgress()
     lastRawGx = nil
     lastRawGy = nil
     lastGpsRefreshAt = nil
+    perfScratch.lastObservedInInstance = nil
+    perfScratch.lastObservedInstMapId = nil
+    perfScratch.lastObservedInstName = nil
     activeLogInitialized = false
     activeQuestCount = 0
     sessionAcceptedPending = false
@@ -9304,6 +10063,7 @@ function State.SetProfile(profileKey)
         locationPlanCache.gen = -1
         locationPlanCache.plan = nil
     end
+    perfScratch.dungeonPlanCache = nil
     if currentStepCache then
         currentStepCache.gen = -1
         currentStepCache.step = nil
@@ -9362,6 +10122,12 @@ function State.Initialize()
     State.RefreshCompletedBulk()
     local pInfo = State.GetPlayerInfo()
     perfScratch.lastObservedInGroup = (pInfo and pInfo.inGroup == true)
+    if (not pInfo.onTaxi) and (not pInfo.isDead) and ns.GetPlayerInstanceState then
+        local curInInst, curInstName, curInstMapId = ns.GetPlayerInstanceState()
+        perfScratch.lastObservedInInstance = (curInInst == true)
+        perfScratch.lastObservedInstMapId = curInstMapId
+        perfScratch.lastObservedInstName = curInstName
+    end
     SyncLiveCharIdentity(pInfo)
     State.ScanQuestLog()
 end
@@ -9564,6 +10330,12 @@ function State.Refresh(reason, arg1, arg2)
     end
     local pInfo = State.GetPlayerInfo()
     perfScratch.lastObservedInGroup = (pInfo and pInfo.inGroup == true)
+    if (not pInfo.onTaxi) and (not pInfo.isDead) and ns.GetPlayerInstanceState then
+        local curInInst, curInstName, curInstMapId = ns.GetPlayerInstanceState()
+        perfScratch.lastObservedInInstance = (curInInst == true)
+        perfScratch.lastObservedInstMapId = curInstMapId
+        perfScratch.lastObservedInstName = curInstName
+    end
     SyncLiveCharIdentity(pInfo)
     if (not isLocationOnly) and not (reason == "MAX_LEVEL_CHANGED" and activeLogInitialized) then
         State.ScanQuestLog()

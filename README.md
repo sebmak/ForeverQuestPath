@@ -13,6 +13,7 @@
 - **Configurable Max Quest Level Offset:** Adjustable `-3` to `+5` quest level ceiling via UI slider or `/fqp maxlevel`.
 - **Skip Elite Quests Unless Grouped:** Automatically defers open-world elite quests and their follow-ups while solo (`Skip Elite (Solo)` toggle or `/fqp elite`), unlocking them immediately when you join a party or raid while always keeping completed turn-ins active.
 - **Skip Dungeon Quests Until Ready:** Defers quests inside dungeon instances (`Skip Dungeons` toggle or `/fqp skipdungeons` / `/fqp dungeons skip|allow|toggle`) while keeping outdoor unlock quests and completed turn-ins active, and automatically rewinds to all deferred dungeon steps when you're ready to run them together.
+- **Automatic In-Dungeon Quest Routing:** When you zone inside any Classic or Forever custom dungeon instance, automatically surfaces that dungeon's ready in-dungeon turn-ins, available inside-dungeon pickups, active objectives, follow-up chains, post-run turn-ins, and shareable dungeon quests as your next steps—even while `Skip Dungeons` or `Skip Elite (Solo)` is enabled—and resumes normal open-world routing when you exit.
 - **Quest Hover Instructions & Click-to-Open Quest Log:** Hovering over any quest in the HUD or Window tabs displays full quest instructions, narrative text, live objective progress, NPC coordinates, chain progress, and rewards; Left-Clicking opens the Quest Log to that quest (or pins its quest giver if unaccepted), while Right-Clicking pins the waypoint or jumps to the route step.
 - **Low-CPU Event Gating:** Suppresses redundant routing recalculations while stationary, looting/skinning, or dead/ghost.
 
@@ -23,9 +24,9 @@
 You can download a prebuilt release binary directly without cloning the repo:
 
 1. Download the latest archive:
-   - Direct asset (`v1.4.0`): [`ForeverQuestPath-v1.4.0.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.4.0.zip)
+   - Direct asset (`v1.5.0`): [`ForeverQuestPath-v1.5.0.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.5.0.zip)
    - All releases: [`github.com/sebmak/ForeverQuestPath/releases/latest`](https://github.com/sebmak/ForeverQuestPath/releases/latest)
-2. Extract `ForeverQuestPath-v1.4.0.zip` into your WoW Forever AddOns directory:
+2. Extract `ForeverQuestPath-v1.5.0.zip` into your WoW Forever AddOns directory:
    - **macOS:** `/Applications/World of Warcraft/_forever_/Interface/AddOns/`
    - **Windows:** `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\`
 3. Confirm the extracted folder structure contains:

@@ -13,6 +13,9 @@
 --   5. While ns.IsPlayerDeadOrGhost() is true, skips automatic autoWaypoint
 --      updates and graveyard Nav hop resolution (while manual /fqp pin pins
 --      the target directly without computing graveyard hops).
+--   6. While inside a dungeon instance on an inside-dungeon step target
+--      (isInsideDungeonTarget == true), automatic autoWaypoint clears stale
+--      outdoor arrows rather than plotting an outdoor entrance coordinate.
 --------------------------------------------------------------------------------
 
 local _, ns = ...
@@ -223,6 +226,11 @@ function Waypoint.SetForStep(step, opts)
     if opts and opts.skipIfSame == true and opts.allowWhileDead ~= true
         and ns.IsPlayerDeadOrGhost and ns.IsPlayerDeadOrGhost() then
         return { ok = false, reason = "player_dead" }
+    end
+    if step.isInsideDungeonTarget == true and ns.IsPlayerInDungeonInstance and ns.IsPlayerInDungeonInstance()
+        and not (opts and (opts.announce or opts.openMap)) then
+        Waypoint.Clear()
+        return { ok = false, reason = "inside_dungeon" }
     end
     local data = ns.GetData()
     local zoneId = step.zoneId

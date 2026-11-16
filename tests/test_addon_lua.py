@@ -3509,7 +3509,7 @@ Mock.FireEvent("ADDON_LOADED", addonName)
 Mock.FireEvent("PLAYER_LOGIN")
 Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
 
-assert(ns.version == "1.4.0", "Expected ns.version == 1.4.0, got " .. tostring(ns.version))
+assert(ns.version == "1.5.0", "Expected ns.version == 1.5.0, got " .. tostring(ns.version))
 assert(type(ns.QuestInfo) == "table", "Expected ns.QuestInfo module to be loaded")
 
 ns.HUD.SetShown(true)
@@ -4164,6 +4164,357 @@ print("OPTIMAL_PATH_UNACCEPTED_OK")
         rc, out, err = _run_luajit(lua_script)
         self.assertEqual(rc, 0, f"Optimal-path unaccepted quest test failed:\\nSTDOUT: {out}\\nSTDERR: {err}")
         self.assertIn("OPTIMAL_PATH_UNACCEPTED_OK", out)
+
+    def test_in_dungeon_quest_suggestions(self) -> None:
+        lua_script = f"""
+local Mock = dofile({str(WOW_MOCK_LUA)!r})
+
+local function hasStep(list, qid, action)
+    for _, st in ipairs(list or {{}}) do
+        if st and (qid == nil or st.questId == qid) and (action == nil or st.action == action) then
+            return true
+        end
+    end
+    return false
+end
+
+local function indexOfStep(list, qid, action)
+    for idx, st in ipairs(list or {{}}) do
+        if st and (qid == nil or st.questId == qid) and (action == nil or st.action == action) then
+            return idx
+        end
+    end
+    return nil
+end
+
+-- ============================================================================
+-- 1. Deadmines (instMapId=36) while skipDungeons=true & skipEliteSolo=true
+-- ============================================================================
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Dungrunner",
+    realm = "Forever",
+    level = 22,
+    raceName = "Human",
+    raceFile = "Human",
+    raceId = 1,
+    className = "Paladin",
+    classFile = "PALADIN",
+    classId = 2,
+    faction = "Alliance",
+    mapId = 1437, -- Wetlands
+    x = 0.118,
+    y = 0.586,
+}})
+Mock.CompleteQuest(155) -- prereq for Q214 / Q166
+Mock.AcceptQuest(214, "Red Silk Bandanas", 17, false, "Dungeon")
+Mock.AcceptQuest(166, "The Defias Brotherhood", 22, false, "Dungeon")
+
+local addonDm, nsDm = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonDm)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+Mock.AdvanceTimers(0.25)
+
+assert(nsDm.charDB.toggles.skipDungeons == true, "Expected skipDungeons default true")
+assert(nsDm.charDB.toggles.skipEliteSolo == true, "Expected skipEliteSolo default true")
+local pOut = nsDm.State.GetPlayerInfo()
+assert(pOut.inInstance == false and pOut.activeDungeonId == nil, "Expected outdoors inInstance=false")
+local curOut, metaOut = nsDm.State.GetCurrentStep()
+assert(curOut and metaOut.source ~= "in_dungeon" and curOut.questId ~= 214 and curOut.questId ~= 166,
+    "Expected skipDungeons=true outdoors to defer incomplete Q214/Q166, got " .. tostring(curOut and curOut.questId))
+
+-- Open HUD & Window so pooled frames also render in dungeon
+nsDm.HUD.SetShown(true)
+nsDm.Window.SetShown(true)
+nsDm.Window.ShowTab("route")
+
+-- Seed an outdoor TomTom waypoint, then zone into The Deadmines (36)
+assert(#Mock.state.tomtomWaypoints >= 1, "Expected outdoor waypoint before zoning into dungeon")
+Mock.SetInstance(true, 36, "Deadmines", "party", true)
+Mock.AdvanceTimers(0.25)
+
+local pIn = nsDm.State.GetPlayerInfo()
+assert(pIn.inInstance == true, "Expected player.inInstance == true inside Deadmines")
+assert(pIn.activeDungeonId == "the-deadmines", "Expected activeDungeonId == 'the-deadmines', got " .. tostring(pIn.activeDungeonId))
+assert(pIn.zoneId == 1581, "Expected zoneId == 1581 inside The Deadmines, got " .. tostring(pIn.zoneId))
+
+local curDm, metaDm = nsDm.State.GetCurrentStep()
+assert(curDm and curDm.action == "COMPLETE" and curDm.questId == 214,
+    "Expected COMPLETE 214 inside Deadmines, got " .. tostring(curDm and curDm.action) .. " " .. tostring(curDm and curDm.questId))
+assert(metaDm and metaDm.source == "in_dungeon", "Expected meta.source == 'in_dungeon', got " .. tostring(metaDm and metaDm.source))
+assert(#Mock.state.tomtomWaypoints == 0, "Expected stale outdoor TomTom waypoint cleared on inside-dungeon target")
+
+local upDm = nsDm.State.GetUpcomingSteps(12)
+assert(hasStep(upDm, 166, "COMPLETE"), "Expected COMPLETE 166 in upcoming Deadmines steps")
+local idxTurn214 = indexOfStep(upDm, 214, "TURN_IN")
+local idxTurn166 = indexOfStep(upDm, 166, "TURN_IN")
+assert(idxTurn214 and idxTurn166, "Expected post-run outdoor TURN_IN 214 and 166 after objectives")
+
+local vmDm = nsDm.HUD.GetViewModel()
+assert(vmDm and vmDm.modeLabel and vmDm.modeLabel:find("In Dungeon", 1, true) and vmDm.modeLabel:find("Dung Active", 1, true),
+    "Expected HUD modeLabel to indicate In Dungeon & Dung Active, got " .. tostring(vmDm and vmDm.modeLabel))
+assert(vmDm.current and vmDm.current.badgesLine:find("[In Dungeon]", 1, true),
+    "Expected HUD badgesLine '[In Dungeon]', got " .. tostring(vmDm.current and vmDm.current.badgesLine))
+assert(vmDm.current.whereLine and vmDm.current.whereLine:find("Inside Dungeon", 1, true),
+    "Expected HUD whereLine 'Inside Dungeon', got " .. tostring(vmDm.current and vmDm.current.whereLine))
+
+local devDm = nsDm.State.GetDeviationStatus()
+assert(devDm and devDm.deviated == false and devDm.gpsMode == "in_dungeon",
+    "Expected DeviationStatus non-deviated in_dungeon mode")
+
+local snapDm = nsDm.Window.GetSnapshot()
+assert(snapDm and snapDm.routeSummary and snapDm.routeSummary:find("In Dungeon: The Deadmines", 1, true),
+    "Expected Window routeSummary 'In Dungeon: The Deadmines', got " .. tostring(snapDm and snapDm.routeSummary))
+local saw214Row, saw166Row = false, false
+for _, r in ipairs(snapDm.routeRows or {{}}) do
+    if r.step and r.step.questId == 214 and r.step.action == "COMPLETE" then
+        assert(r.isCurrent == true and r.step.isInDungeon == true, "Expected Q214 highlighted as current in-dungeon row")
+        saw214Row = true
+    elseif r.step and r.step.questId == 166 and r.step.action == "COMPLETE" then
+        saw166Row = true
+    end
+end
+assert(saw214Row and saw166Row, "Expected both Deadmines active quest rows in Window Current Zone routeRows")
+
+-- ============================================================================
+-- 2. Gnomeregan (90): Ready internal turn-in #1, outdoor turn-ins after run,
+--    and resuming open-world routing on exit
+-- ============================================================================
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Gnomecleanser",
+    realm = "Forever",
+    level = 30,
+    raceName = "Gnome",
+    raceFile = "Gnome",
+    raceId = 7,
+    className = "Rogue",
+    classFile = "ROGUE",
+    classId = 4,
+    faction = "Alliance",
+    mapId = 1455, -- Ironforge
+    x = 0.68,
+    y = 0.49,
+}})
+Mock.CompleteQuest(2904)
+Mock.CompleteQuest(2945)
+Mock.CompleteQuest(2947)
+Mock.AcceptQuest(2951, "The Sparklematic 5200!", 30, true, "Dungeon")
+Mock.AcceptQuest(2924, "Essential Artificials", 30, true, "Dungeon")
+Mock.AcceptQuest(2929, "The Grand Betrayal", 35, false, "Dungeon")
+
+local addonGn, nsGn = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonGn)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+Mock.AdvanceTimers(0.25)
+
+Mock.SetInstance(true, 90, "Gnomeregan", "party", true)
+Mock.AdvanceTimers(0.25)
+
+local curGn, metaGn = nsGn.State.GetCurrentStep()
+assert(metaGn and metaGn.source == "in_dungeon", "Expected in_dungeon source inside Gnomeregan")
+assert(curGn and curGn.action == "TURN_IN" and curGn.questId == 2951 and curGn.isReadyTurnIn == true and curGn.isInsideDungeonTarget == true,
+    "Expected internal ready TURN_IN 2951 as #1 step in Gnomeregan, got " .. tostring(curGn and curGn.action) .. " " .. tostring(curGn and curGn.questId))
+
+local upGn = nsGn.State.GetUpcomingSteps(12)
+local idxComp2929 = indexOfStep(upGn, 2929, "COMPLETE")
+local idxOut2924 = indexOfStep(upGn, 2924, "TURN_IN")
+assert(idxComp2929 and idxOut2924 and idxComp2929 < idxOut2924,
+    string.format("Expected COMPLETE 2929 (pos=%s) BEFORE outdoor TURN_IN 2924 (pos=%s)", tostring(idxComp2929), tostring(idxOut2924)))
+
+-- Complete internal turn-in 2951 and finish objectives of 2929 -> outdoor Ironforge turn-ins become #1
+Mock.TurnInQuest(2951, 1000, 0)
+Mock.SetQuestObjectivesComplete(2929, true)
+Mock.AdvanceTimers(0.25)
+
+local curGnDone = nsGn.State.GetCurrentStep()
+assert(curGnDone and curGnDone.action == "TURN_IN" and (curGnDone.questId == 2924 or curGnDone.questId == 2929)
+    and curGnDone.zoneId == 1537 and curGnDone.x ~= nil and curGnDone.isInsideDungeonTarget == false,
+    "Expected Ironforge outdoor TURN_IN (2924/2929) after finishing dungeon objectives, got "
+    .. tostring(curGnDone and curGnDone.action) .. " " .. tostring(curGnDone and curGnDone.questId))
+
+-- Turn in 2924 & 2929, re-accept an incomplete Gnomeregan quest, then zone out -> open world defers dungeon quests again
+Mock.TurnInQuest(2924, 1500, 0)
+Mock.TurnInQuest(2929, 1500, 0)
+Mock.AcceptQuest(2928, "Gyrodrillmatic Excavationators", 30, false, "Dungeon")
+Mock.SetInstance(false, nil, nil, "none", false)
+Mock.SetPlayerPosition(1437, 11.8, 58.6, "Menethil Harbor", true)
+Mock.FireEvent("PLAYER_ENTERING_WORLD", false, false)
+Mock.AdvanceTimers(0.25)
+
+local pExit = nsGn.State.GetPlayerInfo()
+assert(pExit.inInstance == false and pExit.activeDungeonId == nil, "Expected inInstance=false after zoning out")
+local curExit, metaExit = nsGn.State.GetCurrentStep()
+assert(curExit and metaExit.source ~= "in_dungeon" and curExit.questId ~= 2928,
+    "Expected zoning out with skipDungeons=true to resume open-world routing and defer Q2928")
+
+-- ============================================================================
+-- 3. Forever Custom Dungeon (Excavation Site: Wetlands 2998) over-offset
+--    internal quests (Lv 31 at Lv 26, maxLevelOffset=+2) & internal follow-up
+-- ============================================================================
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Dwarfdelver",
+    realm = "Forever",
+    level = 26,
+    raceName = "Dwarf",
+    raceFile = "Dwarf",
+    raceId = 3,
+    className = "Warrior",
+    classFile = "WARRIOR",
+    classId = 1,
+    faction = "Alliance",
+    mapId = 1437,
+    x = 0.478,
+    y = 0.562,
+}})
+Mock.AcceptQuest(95647, "Lost in the Thicket Things", 31, true, "Dungeon")
+Mock.SetQuestObjectivesComplete(95647, true)
+
+local addonEx, nsEx = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonEx)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+Mock.SetInstance(true, 2998, "Excavation Site: Wetlands", "party", true)
+Mock.AdvanceTimers(0.25)
+
+assert(nsEx.State.GetPlayerInfo().activeDungeonId == "excavation-site-wetlands",
+    "Expected activeDungeonId == 'excavation-site-wetlands'")
+local curEx = nsEx.State.GetCurrentStep()
+assert(curEx and curEx.action == "TURN_IN" and curEx.questId == 95647 and curEx.isInsideDungeonTarget == true,
+    "Expected ready internal TURN_IN 95647 as #1 step in Excavation Site")
+local upEx = nsEx.State.GetUpcomingSteps(15)
+assert(hasStep(upEx, 95809, "ACCEPT"), "Expected unlocked Lv31 internal ACCEPT 95809 (prereq 95647) despite Lv26 +2 offset")
+assert(hasStep(upEx, 95810, "ACCEPT"), "Expected internal Lv31 ACCEPT 95810 despite Lv26 +2 offset")
+assert(hasStep(upEx, 95810, "COMPLETE"), "Expected simulated COMPLETE 95810 inside Excavation Site")
+
+-- ============================================================================
+-- 4. Wing name resolution (Scarlet Monastery - Library) & instMapId=209
+--    (Zul'Farrak, NOT Shadowfang Keep) with 0 active quests
+-- ============================================================================
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Sandseeker",
+    realm = "Forever",
+    level = 45,
+    raceName = "Human",
+    raceFile = "Human",
+    raceId = 1,
+    className = "Paladin",
+    classFile = "PALADIN",
+    classId = 2,
+    faction = "Alliance",
+    mapId = 1446, -- Tanaris
+    x = 0.51,
+    y = 0.28,
+}})
+local addonZf, nsZf = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonZf)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+
+Mock.SetInstance(true, nil, "Scarlet Monastery - Library", "party", true)
+Mock.AdvanceTimers(0.25)
+assert(nsZf.State.GetPlayerInfo().activeDungeonId == "scarlet-monastery",
+    "Expected wing name 'Scarlet Monastery - Library' -> 'scarlet-monastery', got " .. tostring(nsZf.State.GetPlayerInfo().activeDungeonId))
+
+Mock.SetInstance(true, 209, "Zul'Farrak", "party", true)
+Mock.AdvanceTimers(0.25)
+local pZf = nsZf.State.GetPlayerInfo()
+assert(pZf.activeDungeonId == "zul-farrak" and pZf.zoneId == 1176,
+    "Expected instMapId=209 -> 'zul-farrak' (NOT shadowfang-keep!), got " .. tostring(pZf.activeDungeonId))
+local curZf, metaZf = nsZf.State.GetCurrentStep()
+assert(curZf and metaZf.source == "in_dungeon" and curZf.action == "ACCEPT" and curZf.questId ~= nil,
+    "Expected shareable/outdoor-starter Zul'Farrak ACCEPT step on 0-quest entry")
+
+-- ============================================================================
+-- 5. Dungeon wipe corpse-run freeze, Spirit Healer outdoor resurrection,
+--    SkipCurrentStep / StepBack, Dynamic Re-Scorer, and 0 idle GPS triggers
+-- ============================================================================
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Wipeguard",
+    realm = "Forever",
+    level = 22,
+    raceName = "Human",
+    raceFile = "Human",
+    raceId = 1,
+    className = "Paladin",
+    classFile = "PALADIN",
+    classId = 2,
+    faction = "Alliance",
+    mapId = 1437,
+    x = 0.118,
+    y = 0.586,
+}})
+Mock.CompleteQuest(155)
+Mock.AcceptQuest(214, "Red Silk Bandanas", 17, false, "Dungeon")
+Mock.AcceptQuest(166, "The Defias Brotherhood", 22, false, "Dungeon")
+
+local addonWp, nsWp = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonWp)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+nsWp.HUD.SetShown(true)
+nsWp.Window.SetShown(true)
+Mock.SetInstance(true, 36, "Deadmines", "party", true)
+Mock.AdvanceTimers(0.25)
+
+local curAlive = nsWp.State.GetCurrentStep()
+assert(curAlive and curAlive.questId == 214 and curAlive.action == "COMPLETE", "Expected COMPLETE 214 while alive in Deadmines")
+
+-- Wipe inside Deadmines -> Release Spirit to outdoor Westfall graveyard
+Mock.SetDead(true, false, true)
+Mock.SetInstance(false, nil, nil, "none", false)
+Mock.ReleaseSpirit(1436, 56.6, 52.6, "Sentinel Hill")
+Mock.FireEvent("QUEST_LOG_UPDATE")
+Mock.AdvanceTimers(5.0)
+local curGhost, metaGhost = nsWp.State.GetCurrentStep()
+assert(metaGhost and metaGhost.source == "in_dungeon" and curGhost and curGhost.questId == 214,
+    "Expected corpse-run ghost outside portal to stay frozen on Deadmines COMPLETE 214")
+
+-- Resurrect at outdoor Spirit Healer -> exits in_dungeon mode & resumes open-world
+Mock.Resurrect(1436, 56.6, 52.6, "Sentinel Hill")
+Mock.AdvanceTimers(0.25)
+local pRez = nsWp.State.GetPlayerInfo()
+assert(pRez.inInstance == false and pRez.activeDungeonId == nil, "Expected inInstance cleared on outdoor resurrection")
+local curRez, metaRez = nsWp.State.GetCurrentStep()
+assert(curRez and metaRez.source ~= "in_dungeon" and curRez.questId ~= 214 and curRez.questId ~= 166,
+    "Expected outdoor resurrection to resume open-world routing with skipDungeons=true")
+
+-- Re-enter Deadmines -> test SkipCurrentStep / StepBack & Scorer.GetDynamicSteps
+Mock.SetInstance(true, 36, "Deadmines", "party", true)
+Mock.AdvanceTimers(0.25)
+nsWp.State.SkipCurrentStep()
+local curAfterSkip = nsWp.State.GetCurrentStep()
+assert(curAfterSkip and curAfterSkip.questId == 166 and curAfterSkip.action == "COMPLETE",
+    "Expected SkipCurrentStep inside Deadmines to advance to COMPLETE 166, got " .. tostring(curAfterSkip and curAfterSkip.questId))
+nsWp.State.StepBack()
+local curAfterBack = nsWp.State.GetCurrentStep()
+assert(curAfterBack and curAfterBack.questId == 214 and curAfterBack.action == "COMPLETE",
+    "Expected StepBack inside Deadmines to restore COMPLETE 214")
+
+local dynDung = nsWp.Scorer.GetDynamicSteps(nsWp.State.GetPlayerInfo(), nsWp.GetActiveWeights(), nsWp.charDB.toggles, 10)
+assert(dynDung and dynDung[1] and dynDung[1].questId == 214 and dynDung[1].action == "COMPLETE",
+    "Expected Scorer.GetDynamicSteps to prioritize Deadmines COMPLETE 214 even while skipDungeons=true")
+
+-- Idle 30s inside dungeon -> 0 GPS tick triggers & 0 UI allocations
+nsWp.State.ResetIdlePerfStats()
+Mock.ResetMetrics()
+Mock.AdvanceTimers(30.0)
+local idleSt = nsWp.State.GetIdlePerfStats()
+local mDung = Mock.GetMetrics()
+assert(idleSt.gpsTickTriggers == 0, "Expected 0 idle gpsTickTriggers inside dungeon, got " .. tostring(idleSt.gpsTickTriggers))
+assert(mDung.createFrameCalls == 0, "Expected 0 CreateFrame calls inside dungeon, got " .. tostring(mDung.createFrameCalls))
+assert(mDung.createRegionCalls == 0, "Expected 0 CreateRegion calls inside dungeon, got " .. tostring(mDung.createRegionCalls))
+assert(#Mock.errors == 0, "Unexpected Lua errors in in-dungeon test: " .. table.concat(Mock.errors, "; "))
+print("IN_DUNGEON_QUEST_SUGGESTIONS_OK")
+"""
+        rc, out, err = _run_luajit(lua_script)
+        self.assertEqual(rc, 0, f"In-dungeon quest suggestions test failed:\nSTDOUT: {out}\nSTDERR: {err}")
+        self.assertIn("IN_DUNGEON_QUEST_SUGGESTIONS_OK", out)
 
     def test_deployed_addon_matches_source_directory(self) -> None:
         self.assertTrue(ADDON_DST.exists(), f"Installed addon directory missing: {ADDON_DST}")

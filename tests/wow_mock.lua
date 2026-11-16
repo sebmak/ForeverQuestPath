@@ -3,7 +3,8 @@
 -- WorldMapFrame.QuestLog, QuestMapFrame_OpenToQuestDetails, GameTooltip (IsOwned/
 -- AddLine/AddDoubleLine), GetQuestLogQuestText, Frame/Widget APIs, SavedVariables
 -- lifecycle, .toc loader, group/raid APIs (IsInGroup, IsInRaid, GetNumGroupMembers,
--- GetNumPartyMembers, GetNumRaidMembers, Mock.SetGroup), and TomTom/OpenMap mocks.
+-- GetNumPartyMembers, GetNumRaidMembers, Mock.SetGroup), instance APIs
+-- (IsInInstance, GetInstanceInfo, Mock.SetInstance), and TomTom/OpenMap mocks.
 
 local M = {}
 
@@ -148,6 +149,10 @@ M.state = {
         inGroup = false,
         isRaid = false,
         groupMembers = 0,
+        inInstance = false,
+        instanceType = "none",
+        instanceName = nil,
+        instanceMapId = nil,
         hearthCooldownStart = 0,
         hearthCooldownDuration = 0,
     },
@@ -647,6 +652,10 @@ function M.Reset(opts)
         inGroup = false,
         isRaid = false,
         groupMembers = 0,
+        inInstance = false,
+        instanceType = "none",
+        instanceName = nil,
+        instanceMapId = nil,
         hearthCooldownStart = 0,
         hearthCooldownDuration = 0,
     }
@@ -779,7 +788,11 @@ function M.Reset(opts)
     end
     _G.GetMoney = function() return M.state.character.money end
     _G.GetRealZoneText = function()
-        local node = MAP_NODES[M.state.character.mapId]
+        local c = M.state.character
+        if c.inInstance == true and c.instanceName and c.instanceName ~= "" then
+            return c.instanceName
+        end
+        local node = MAP_NODES[c.mapId]
         return node and node.name or "Wetlands"
     end
     _G.GetZoneText = _G.GetRealZoneText
@@ -831,6 +844,16 @@ function M.Reset(opts)
     end
     _G.IsInRaid = function()
         return M.state.character.isRaid == true
+    end
+    _G.IsInInstance = function()
+        local c = M.state.character
+        return c.inInstance == true, c.instanceType or (c.inInstance and "party" or "none")
+    end
+    _G.GetInstanceInfo = function()
+        local c = M.state.character
+        local name = c.instanceName or (_G.GetRealZoneText and _G.GetRealZoneText()) or "Unknown"
+        local iType = (c.inInstance and (c.instanceType or "party")) or "none"
+        return name, iType, (iType == "raid" and 9 or 1), "Normal", (iType == "raid" and 40 or 5), 0, false, tonumber(c.instanceMapId) or 0
     end
     _G.GetNumGroupMembers = function()
         return M.state.character.groupMembers or (M.state.character.inGroup and 2 or 0)
@@ -1100,8 +1123,9 @@ function M.Reset(opts)
             return M.state.character.mapId
         end,
         GetPlayerMapPosition = function(mapID, unit)
-            if mapID ~= M.state.character.mapId then return nil end
+            if not mapID or mapID ~= M.state.character.mapId then return nil end
             local px, py = M.state.character.x, M.state.character.y
+            if px == nil or py == nil then return nil end
             return { x = px, y = py, GetXY = function() return px, py end }
         end,
         GetFallbackWorldMapID = function() return 947 end,
@@ -1534,6 +1558,24 @@ function M.SetGroup(inGroup, memberCount, isRaid, fireEvent)
     M.state.character.groupMembers = count
     if fireEvent ~= false then
         M.FireEvent("GROUP_ROSTER_UPDATE")
+    end
+end
+
+function M.SetInstance(inInstance, instanceMapId, instanceName, instanceType, fireEvents)
+    local c = M.state.character
+    local inInst = (inInstance == true)
+    c.inInstance = inInst
+    c.instanceMapId = inInst and tonumber(instanceMapId) or nil
+    c.instanceName = inInst and instanceName or nil
+    c.instanceType = inInst and (instanceType or "party") or "none"
+    if inInst then
+        c.mapId = nil
+        c.x = nil
+        c.y = nil
+    end
+    if fireEvents ~= false then
+        M.FireEvent("PLAYER_ENTERING_WORLD", false, false)
+        M.FireEvent("ZONE_CHANGED_NEW_AREA")
     end
 end
 

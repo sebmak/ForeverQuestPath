@@ -4,19 +4,21 @@
 --   1. Central namespace setup, SavedVariables initialization, 5-weight profile
 --      presets (including Skinning & Leatherworking), maxLevelOffset (-3..+5,
 --      default +2), multi-race/class/faction character helpers, shared
---      IsPlayerDeadOrGhost & IsPlayerInGroup state helpers, formatting, event
+--      IsPlayerDeadOrGhost, IsPlayerInGroup, and GetPlayerInstanceState /
+--      IsPlayerInDungeonInstance state helpers, formatting, event
 --      bus, throttled GPS location ticker, trailing-edge event coalescing
 --      (deferring loot/skill/subzone/group bursts off frame 0 without dropping
 --      distinct event categories), PLAYER_DEAD / PLAYER_ALIVE / PLAYER_UNGHOST
 --      dead/ghost location gating & resurrection resume, change-gated
 --      GROUP_ROSTER_UPDATE / PARTY_MEMBERS_CHANGED / RAID_ROSTER_UPDATE group
 --      tracking (supporting solo elite skipping via toggles.skipEliteSolo,
---      dungeon quest deferral via toggles.skipDungeons, and optimal-path
---      unaccepted available quest discovery via State/Scorer), TAXIMAP_OPENED
---      change-gated flight-master recording, /fqp gate toggle, /fqp elite
---      toggle, /fqp skipdungeons (/fqp dungeons skip|allow|toggle), /fqp gps
---      stats telemetry, quest hover info tooltips & click-to-open Quest Log
---      (via UI/QuestInfo.lua), and slash commands.
+--      dungeon quest deferral via toggles.skipDungeons, automatic in-dungeon
+--      quest routing when zoned inside a dungeon/raid instance, and
+--      optimal-path unaccepted available quest discovery via State/Scorer),
+--      TAXIMAP_OPENED change-gated flight-master recording, /fqp gate toggle,
+--      /fqp elite toggle, /fqp skipdungeons (/fqp dungeons skip|allow|toggle),
+--      /fqp gps stats telemetry, quest hover info tooltips & click-to-open
+--      Quest Log (via UI/QuestInfo.lua), and slash commands.
 --   2. Must tolerate missing optional addons (TomTom, OpenMap, Questie,
 --      ForeverLevelingBiS) and missing/partial GeneratedData safely.
 --   3. Keep all Lua compatible with WoW Forever 1.60.1 (Lua 5.1 semantics)
@@ -31,7 +33,7 @@ end
 addonName = addonName or "ForeverQuestPath"
 
 ns.name = addonName
-ns.version = "1.4.0"
+ns.version = "1.5.0"
 ns.PREFIX = "|cff33d9ffForeverQuestPath|r: "
 
 _G.ForeverQuestPath = ns
@@ -178,6 +180,33 @@ function ns.IsPlayerInGroup()
         return true
     end
     return false
+end
+
+function ns.GetPlayerInstanceState()
+    if not IsInInstance then
+        return false, nil, nil, "none"
+    end
+    local inInst, instType = IsInInstance()
+    if not inInst or (instType ~= "party" and instType ~= "raid") then
+        return false, nil, nil, instType or "none"
+    end
+    local instName, instMapId = nil, nil
+    if GetInstanceInfo then
+        local name, _, _, _, _, _, _, mapId = GetInstanceInfo()
+        if type(name) == "string" and name ~= "" then
+            instName = name
+        end
+        instMapId = tonumber(mapId)
+        if instMapId and instMapId <= 0 then
+            instMapId = nil
+        end
+    end
+    return true, instName, instMapId, instType
+end
+
+function ns.IsPlayerInDungeonInstance()
+    local inDungeon = ns.GetPlayerInstanceState()
+    return inDungeon == true
 end
 
 function ns.CopyTable(src)
