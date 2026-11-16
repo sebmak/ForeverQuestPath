@@ -29,7 +29,12 @@
 --      perfScratch.readyStepDist step-to-ready distance caching, and 50/42-bit
 --      RouteDistCoord packing for Forever IDs; near-realtime GPS walking reorder
 --      with hysteresis (lazy single-source nav field priming, multi-cursor
---      perfScratch.gpsBaseCtx, per-ws solved planByOff + allOpenOff clamping,
+--      perfScratch.gpsBaseCtx, region-keyed gbw optimal-path available quest
+--      discovery via perfScratch.InjectOptimalPathAvailableQuests /
+--      MinPathProximity, per-ws solved planByOff + allOpenOff clamping,
+--      same-hub / on-corridor ACCEPT prioritization over distant
+--      recent-accepted objectives via AdjustUnlockedAcceptBoosts /
+--      ShouldAcceptOverrideSticky,
 --      recentAcceptedSeq-memoized GetLocationPlanSignature & offDbLocalSig,
 --      cursor-independent perfScratch.gpsDist pairMap+playerMap keyed by
 --      distId, LuaJIT table.clear-backed WipeMap, scratch maps/arrays, hoisted
@@ -373,6 +378,11 @@ local perfScratch = {
     readyStepDist = { map = {}, stepsRef = nil, navAvail = nil, faction = nil, count = 0 },
     offDbEliteMemo = {},
     lastObservedInGroup = nil,
+    optPathWpX = {},
+    optPathWpY = {},
+    optPathCands = {},
+    optPathCosts = {},
+    optPathReadyImm = {},
 }
 local decCache = {
     byMaxOff = {},
@@ -6536,6 +6546,453 @@ function perfScratch.ClearWatchersForQuest(qid, prereqWatchers, exclWatchers, da
     end
 end
 
+function perfScratch.MinPathProximity(tx, ty, wpX, wpY, wCount)
+    if not (tx and ty and wCount and wCount >= 1) then
+        return 9999, 9999
+    end
+    local minNodeDist = 9999
+    for j = 1, wCount do
+        local d = TurninDist(wpX[j], wpY[j], tx, ty)
+        if d < minNodeDist then
+            minNodeDist = d
+        end
+    end
+    local minDetour = minNodeDist
+    if wCount >= 2 then
+        for j = 1, wCount - 1 do
+            local ax, ay = wpX[j], wpY[j]
+            local bx, by = wpX[j + 1], wpY[j + 1]
+            local baseD = TurninDist(ax, ay, bx, by)
+            local detour = TurninDist(ax, ay, tx, ty) + TurninDist(tx, ty, bx, by) - baseD
+            if detour < minDetour then
+                minDetour = detour
+            end
+        end
+    end
+    return minNodeDist, minDetour
+end
+
+function perfScratch.IsStaticAcceptManuallySkipped(qid, acceptMap, steps, pkey)
+    local skippedTbl = ns.charDB and ns.charDB.skippedSteps
+    if (not skippedTbl) or (not next(skippedTbl)) or (not acceptMap) then
+        return false
+    end
+    local aEntry = acceptMap[qid]
+    if aEntry == nil then
+        return false
+    end
+    if type(aEntry) == "number" then
+        local ast = steps and steps[aEntry]
+        return ast ~= nil and State.IsStepSkipped(ast, aEntry, pkey)
+    end
+    for p = 1, #aEntry do
+        local aIdx = aEntry[p]
+        local ast = steps and steps[aIdx]
+        if ast ~= nil and State.IsStepSkipped(ast, aIdx, pkey) then
+            return true
+        end
+    end
+    return false
+end
+
+function perfScratch.InjectOptimalPathAvailableQuests(gbw, pX, pY, player, toggles, readyPlan, prof, data)
+    if (not gbw) or (not data) or (not data.quests) then
+        return
+    end
+    local pZone = gbw.pZone
+    if (not pZone) or CAPITAL_ZONES[pZone] == true then
+        return
+    end
+    State.BuildIndexes()
+    local zoneIds = zoneQuestsIndex[pZone]
+    if (not zoneIds) or (#zoneIds == 0) then
+        return
+    end
+
+    local baseWindowItems = gbw.baseWindowItems
+    if (#baseWindowItems <= 1) and (gbw.extraLocalCount == 0) then
+        return
+    end
+    local windowHasAccept = gbw.windowHasAccept
+    local windowHasComplete = gbw.windowHasComplete
+    local windowHasTurnin = gbw.windowHasTurnin
+    local activeLocalSet = gbw.activeLocalSet
+    local inWindowByQidBase = gbw.inWindowByQidBase
+
+    local wpX = perfScratch.optPathWpX
+    local wpY = perfScratch.optPathWpY
+    wpX[1] = pX
+    wpY[1] = pY
+    local wCount = 1
+    for i = 1, #baseWindowItems do
+        local wItem = baseWindowItems[i]
+        if wItem and wItem.x and wItem.y then
+            if TurninDist(wpX[wCount], wpY[wCount], wItem.x, wItem.y) >= 1.0 then
+                wCount = wCount + 1
+                wpX[wCount] = wItem.x
+                wpY[wCount] = wItem.y
+                if wCount >= 24 then
+                    break
+                end
+            end
+        end
+    end
+
+    local readyImm = WipeMap(perfScratch.optPathReadyImm)
+    if readyPlan and readyPlan.immediate then
+        for i = 1, #readyPlan.immediate do
+            local rst = readyPlan.immediate[i]
+            if rst and rst.questId then
+                readyImm[rst.questId] = true
+            end
+        end
+    end
+
+    local completedMap, bulkSynced = State.GetCompletedReadOnly()
+    local checkCompSlow = (not bulkSynced) and State.IsQuestCompleted or nil
+    local acceptMap = GetAcceptStepIndexMap(gbw.stepsRef)
+    local questsData = data.quests
+    local pLevel = gbw.pLevel
+    local pkey = gbw.pkey
+    local maxCandLv = pLevel + DEFAULT_MAX_LEVEL_OFFSET
+    local skipEliteNow = gbw.skipEliteNow
+    local skipDungeonsNow = gbw.skipDungeonsNow
+
+    local cands = perfScratch.optPathCands
+    local costs = perfScratch.optPathCosts
+    local candCount = 0
+
+    for zi = 1, #zoneIds do
+        local qid = zoneIds[zi]
+        local q = qid and questsData[qid]
+        if q
+            and (not windowHasAccept[qid])
+            and activeQuests[qid] == nil
+            and (not q.isDungeon)
+            and not ((completedMap[qid] == true) or (checkCompSlow ~= nil and checkCompSlow(qid, true)) or readyImm[qid]) then
+            local minLv = tonumber(q.minLevel) or 1
+            local qLv = tonumber(q.questLevel) or minLv
+            local nonTrivial = (qLv > pLevel - 7)
+                or ((tonumber(q.bagSlots) or 0) > 0)
+                or (q.classMask and q.classMask > 0)
+            if minLv <= pLevel
+                and qLv <= maxCandLv
+                and nonTrivial
+                and not IsGpsStepSkippedOrDone("gps:ACCEPT:" .. tostring(qid))
+                and not perfScratch.IsStaticAcceptManuallySkipped(qid, acceptMap, gbw.stepsRef, pkey)
+                and not (State.IsQuestExcluded and State.IsQuestExcluded(qid, true))
+                and State.IsEligibleForPlayer(qid, player)
+                and not (type(q.requiredSkill) == "table" and IsRequiredSkillBlocked(q.requiredSkill, prof, true))
+                and not (skipEliteNow and State.IsQuestElite(qid, q))
+                and not (skipDungeonsNow and State.IsQuestDungeon(qid, q))
+                and IsQuestInZoneChain(q, pZone, false)
+                and IsSameZoneChainQuest(q, pZone) then
+
+                local blockedExcl = false
+                if type(q.exclusiveTo) == "table" then
+                    for _, oid in ipairs(q.exclusiveTo) do
+                        if oid ~= qid and (
+                            windowHasAccept[oid]
+                            or activeQuests[oid] ~= nil
+                            or readyImm[oid]
+                            or (completedMap[oid] == true)
+                            or (checkCompSlow ~= nil and checkCompSlow(oid, true))
+                        ) then
+                            blockedExcl = true
+                            break
+                        end
+                    end
+                end
+
+                local prereqOk = true
+                if (not blockedExcl) and type(q.prereqIds) == "table" and #q.prereqIds > 0 then
+                    if q.prereqMode == "any" then
+                        prereqOk = false
+                        for pi = 1, #q.prereqIds do
+                            local pid = q.prereqIds[pi]
+                            if (completedMap[pid] == true)
+                                or (checkCompSlow ~= nil and checkCompSlow(pid, true)) then
+                                prereqOk = true
+                                break
+                            end
+                        end
+                    else
+                        for pi = 1, #q.prereqIds do
+                            local pid = q.prereqIds[pi]
+                            if not ((completedMap[pid] == true)
+                                or (checkCompSlow ~= nil and checkCompSlow(pid, true))) then
+                                prereqOk = false
+                                break
+                            end
+                        end
+                    end
+                end
+
+                if (not blockedExcl) and prereqOk then
+                    local sPt = GetQuestStepPoint(q, "ACCEPT")
+                    if sPt and sPt.x and sPt.y and TurninDist(pX, pY, sPt.x, sPt.y) <= 30.0 then
+                        local sCount = (wCount < 8) and wCount or 8
+                        local sNode, sDet = perfScratch.MinPathProximity(sPt.x, sPt.y, wpX, wpY, sCount)
+                        if sNode <= 12.0 or sDet <= 6.5 then
+                            local pathOk = true
+                            local oNode, oDet = nil, nil
+                            if QuestHasObjectives(q, nil) then
+                                local oPt = GetQuestStepPoint(q, "COMPLETE")
+                                if oPt and oPt.x and oPt.y then
+                                    oNode, oDet = perfScratch.MinPathProximity(oPt.x, oPt.y, wpX, wpY, wCount)
+                                    if not (oNode <= 22.0 or oDet <= 14.0) then
+                                        pathOk = false
+                                    end
+                                end
+                            end
+                            local tNode, tDet = nil, nil
+                            if pathOk then
+                                local tPt = GetQuestStepPoint(q, "TURN_IN")
+                                if tPt and tPt.x and tPt.y then
+                                    tNode, tDet = perfScratch.MinPathProximity(tPt.x, tPt.y, wpX, wpY, wCount)
+                                    if not (tNode <= 22.0 or tDet <= 14.0) then
+                                        pathOk = false
+                                    end
+                                end
+                            end
+                            if pathOk then
+                                local sMin = math.min(sNode, math.max(0, sDet))
+                                local oMin = oNode and math.min(oNode, math.max(0, oDet)) or 0
+                                local tMin = tNode and math.min(tNode, math.max(0, tDet)) or 0
+                                local cost = sMin + 0.35 * oMin + 0.15 * tMin
+                                local ins = candCount + 1
+                                for ci = 1, candCount do
+                                    local cc = costs[ci]
+                                    if (cost < cc - 0.001) or (math.abs(cost - cc) <= 0.001 and qid < cands[ci]) then
+                                        ins = ci
+                                        break
+                                    end
+                                end
+                                if ins <= 12 then
+                                    local limit = math.min(candCount + 1, 12)
+                                    for sh = limit, ins + 1, -1 do
+                                        cands[sh] = cands[sh - 1]
+                                        costs[sh] = costs[sh - 1]
+                                    end
+                                    cands[ins] = qid
+                                    costs[ins] = cost
+                                    if candCount < 12 then
+                                        candCount = candCount + 1
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if candCount == 0 then
+        return
+    end
+
+    local pZoneName = gbw.zoneName or "current zone"
+    local added = 0
+    for ci = 1, candCount do
+        if added >= 4 then
+            break
+        end
+        local qid = cands[ci]
+        local q = qid and questsData[qid]
+        if q then
+            local conflict = false
+            if type(q.exclusiveTo) == "table" then
+                for _, oid in ipairs(q.exclusiveTo) do
+                    if oid ~= qid and windowHasAccept[oid] then
+                        conflict = true
+                        break
+                    end
+                end
+            end
+            if not conflict then
+                local validQid = (type(qid) == "number" and qid > 0 and qid < 262144)
+                local aKey = "gps:ACCEPT:" .. tostring(qid)
+                local stA = perfScratch.GetCachedProactiveStep(q, qid, "ACCEPT", "Optimal-path available quest in ", pZone, pZoneName, player, data)
+                gbw.nextItemId = gbw.nextItemId + 1
+                baseWindowItems[#baseWindowItems + 1] = {
+                    id = gbw.nextItemId,
+                    distId = validQid and (32768 + qid * 4 + 1) or nil,
+                    origIdx = nil,
+                    seq = #baseWindowItems + 1,
+                    step = stA,
+                    action = "ACCEPT",
+                    qids = GetSingleQidList(qid),
+                    qid1 = qid,
+                    isSingleQ = true,
+                    x = stA.x,
+                    y = stA.y,
+                    key = aKey,
+                    isExtra = true,
+                    isOptimalPath = true,
+                }
+                inWindowByQidBase[qid] = true
+                windowHasAccept[qid] = true
+
+                if (not windowHasComplete[qid]) and QuestHasObjectives(q, nil) then
+                    local cKey = "gps:COMPLETE:" .. tostring(qid)
+                    if not IsGpsStepSkippedOrDone(cKey) then
+                        local stC = perfScratch.GetCachedProactiveStep(q, qid, "COMPLETE", "Optimal-path objective in ", pZone, pZoneName, player, data)
+                        gbw.nextItemId = gbw.nextItemId + 1
+                        baseWindowItems[#baseWindowItems + 1] = {
+                            id = gbw.nextItemId,
+                            distId = validQid and (32768 + qid * 4 + 2) or nil,
+                            origIdx = nil,
+                            seq = #baseWindowItems + 1,
+                            step = stC,
+                            action = "COMPLETE",
+                            qids = GetSingleQidList(qid),
+                            qid1 = qid,
+                            isSingleQ = true,
+                            x = stC.x,
+                            y = stC.y,
+                            key = cKey,
+                            isExtra = true,
+                            isOptimalPath = true,
+                        }
+                        windowHasComplete[qid] = true
+                    end
+                end
+
+                if not windowHasTurnin[qid] then
+                    local tKey = "gps:TURN_IN:" .. tostring(qid)
+                    if not IsGpsStepSkippedOrDone(tKey) then
+                        local stT = perfScratch.GetCachedProactiveStep(q, qid, "TURN_IN", "Optimal-path turn-in in ", pZone, pZoneName, player, data)
+                        gbw.nextItemId = gbw.nextItemId + 1
+                        baseWindowItems[#baseWindowItems + 1] = {
+                            id = gbw.nextItemId,
+                            distId = validQid and (32768 + qid * 4 + 3) or nil,
+                            origIdx = nil,
+                            seq = #baseWindowItems + 1,
+                            step = stT,
+                            action = "TURN_IN",
+                            qids = GetSingleQidList(qid),
+                            qid1 = qid,
+                            isSingleQ = true,
+                            x = stT.x,
+                            y = stT.y,
+                            key = tKey,
+                            isExtra = true,
+                            isOptimalPath = true,
+                        }
+                        windowHasTurnin[qid] = true
+                    end
+                end
+
+                gbw.extraLocalCount = gbw.extraLocalCount + 1
+                if gbw.optPathSet then
+                    gbw.optPathSet[qid] = true
+                end
+                added = added + 1
+            end
+        end
+    end
+end
+
+function perfScratch.AdjustUnlockedAcceptBoosts(unlocked, uCount, curX, curY, directFollowupSet, chainFollowupSet)
+    local actDist, actX, actY = nil, nil, nil
+    local maxRecentBoost = 0
+    local maxNonChainBoost = 0
+    local hasNonChainRecent = false
+    local hasAnyAccept = false
+    for k = 1, uCount do
+        local slot = unlocked[k]
+        local it = slot and slot.item
+        if it then
+            local act = it.action
+            if act == "ACCEPT" then
+                hasAnyAccept = true
+            elseif act == "COMPLETE" or act == "TURN_IN" then
+                local sd = slot.dist
+                if (not actDist) or sd < actDist then
+                    actDist = sd
+                    actX = it.x
+                    actY = it.y
+                end
+                local b = sd - slot.effDist
+                if b > maxRecentBoost then
+                    maxRecentBoost = b
+                end
+                local q1 = it.qid1
+                if not (q1 and (chainFollowupSet and chainFollowupSet[q1])) then
+                    if b > maxNonChainBoost then
+                        maxNonChainBoost = b
+                    end
+                    if b >= 30.0 then
+                        hasNonChainRecent = true
+                    end
+                end
+            end
+        end
+    end
+    if not (hasAnyAccept and actDist and actDist > 7.5) then
+        return
+    end
+    -- Only elevate general hub/corridor ACCEPTs above active objectives when an objective
+    -- is using the recentAccepted/active boost rather than an active mid-chain continuation.
+    local useBoost = nil
+    if hasNonChainRecent then
+        useBoost = math.min(41.0, maxRecentBoost + 3.5)
+    elseif maxNonChainBoost > 0 and maxRecentBoost < 20.0 then
+        useBoost = maxNonChainBoost + 3.5
+    end
+    if not useBoost then
+        return
+    end
+    for k = 1, uCount do
+        local slot = unlocked[k]
+        local it = slot and slot.item
+        if it and it.action == "ACCEPT" then
+            local q1 = it.qid1
+            local d = slot.dist
+            if not (q1 and directFollowupSet and directFollowupSet[q1] and d <= 6.0) then
+                local inHub = (d <= 5.2)
+                local onCorridor = false
+                if (not inHub) and (d + 3.0 < actDist) and curX and curY and it.x and it.y and actX and actY then
+                    local detour = TurninDist(curX, curY, it.x, it.y)
+                        + TurninDist(it.x, it.y, actX, actY)
+                        - TurninDist(curX, curY, actX, actY)
+                    if detour <= 3.5 then
+                        onCorridor = true
+                    end
+                end
+                if inHub or onCorridor then
+                    local candEff = d - useBoost
+                    if candEff < slot.effDist then
+                        slot.effDist = candEff
+                    end
+                end
+            end
+        end
+    end
+end
+
+function perfScratch.ShouldAcceptOverrideSticky(chosen, stickySlot, curX, curY)
+    if not (chosen and stickySlot and chosen.item and stickySlot.item) then
+        return false
+    end
+    if chosen.item.action ~= "ACCEPT" or stickySlot.dist <= 7.5 then
+        return false
+    end
+    if chosen.dist <= 5.2 then
+        return true
+    end
+    if (chosen.dist + 3.0 < stickySlot.dist) and curX and curY and chosen.item.x and chosen.item.y and stickySlot.item.x and stickySlot.item.y then
+        local detour = TurninDist(curX, curY, chosen.item.x, chosen.item.y)
+            + TurninDist(chosen.item.x, chosen.item.y, stickySlot.item.x, stickySlot.item.y)
+            - TurninDist(curX, curY, stickySlot.item.x, stickySlot.item.y)
+        if detour <= 3.5 then
+            return true
+        end
+    end
+    return false
+end
+
 local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, readyPlan, data)
     if (not steps) or (not cursor) or cursor > #steps then
         return nil
@@ -6681,7 +7138,9 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
         perfScratch.gpsBaseCtx = gCtx
     end
 
-    local gbwKey = (readyWinSig == "") and cursor or (tostring(cursor) .. "\1" .. readyWinSig)
+    local gbwKey = tostring(cursor)
+        .. ":" .. tostring(math.floor(pX * 0.0625) * 8 + math.floor(pY * 0.0625))
+        .. ((readyWinSig == "") and "" or ("\1" .. readyWinSig))
     local gbw = gCtx.byCursorKey[gbwKey]
     if not gbw then
 
@@ -6876,6 +7335,9 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
             classId = player.classId,
             faction = player.faction,
             navAvail = navFieldAvail,
+            skipEliteNow = skipEliteNow,
+            skipDungeonsNow = skipDungeonsNow,
+            optPathSet = {},
             readyWinSig = readyWinSig,
             offDbLocalSig = offDbLocalSig,
             baseWindowItems = baseWindowItems,
@@ -6891,6 +7353,7 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
             extraItemIds = {},
             winByChainSig = {},
         }
+        perfScratch.InjectOptimalPathAvailableQuests(gbw, pX, pY, player, toggles, readyPlan, prof or State.DetectProfessions(), data)
         gCtx.byCursorKey[gbwKey] = gbw
     end
 
@@ -6948,7 +7411,7 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
     end
     for qid in pairs(windowHasTurnin) do
         local q = questsData and questsData[qid]
-        if q and q.zoneId == pZone then
+        if q and q.zoneId == pZone and not (gbw.optPathSet and gbw.optPathSet[qid]) then
             qTail = perfScratch.EnqueueGpsChain(qid, 0, qid, false, chainSeen, qTail)
         end
     end
@@ -7539,7 +8002,7 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
                     local activeBoost = 0
                     if qid1 then
                         if item.action == "ACCEPT" and directFollowupSet[qid1] and d <= 42.0 then
-                            activeBoost = (d <= 6.0) and 40.0 or 32.0
+                            activeBoost = (d <= 6.0) and 44.0 or 32.0
                         elseif (item.action == "COMPLETE" or item.action == "TURN_IN") and (directFollowupSet[qid1] or recentAcceptedQuests[qid1]) and d <= 65.0 then
                             activeBoost = 40.0
                         elseif (item.action == "TURN_IN" or item.action == "COMPLETE") and vActive[qid1] then
@@ -7568,6 +8031,9 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
         if uCount == 0 then
             break
         end
+        if uCount > 1 then
+            perfScratch.AdjustUnlockedAcceptBoosts(unlocked, uCount, curX, curY, directFollowupSet, chainFollowupSet)
+        end
         local chosen = unlocked[1]
         local stickyKey = (pickNum == 1) and (lastGpsTargetKey or (windowItems[1] and windowItems[1].key)) or nil
         local stickySlot = (stickyKey and chosen.item.key == stickyKey) and chosen or nil
@@ -7587,7 +8053,9 @@ local function BuildIntraZoneReorderPlan(steps, cursor, player, pkey, toggles, r
                 (chosen.item.action == "ACCEPT" and directFollowupSet[cQid] and (chosen.dist <= 12.0))
                 or ((not hasLockedTarget) and chosen.item.action ~= "ACCEPT" and (directFollowupSet[cQid] or recentAcceptedQuests[cQid]))
             )
-            if (not chosenIsDirectFollowup) and ((stickySlot.dist - chosen.dist) <= GPS_HYSTERESIS_SAVING) then
+            if (not chosenIsDirectFollowup)
+                and (not perfScratch.ShouldAcceptOverrideSticky(chosen, stickySlot, curX, curY))
+                and ((stickySlot.dist - chosen.dist) <= GPS_HYSTERESIS_SAVING) then
                 chosen = stickySlot
             end
         end

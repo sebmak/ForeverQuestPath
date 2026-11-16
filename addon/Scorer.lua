@@ -3,11 +3,12 @@
 -- Rules:
 --   1. Multi-objective dynamic quest re-scorer (XP, Travel, Dungeon Unlocks,
 --      Gold/Bags/Class BiS Gear, and Skinning/Leatherworking) prioritizing
---      in-window dungeons, local-zone momentum, proactive virtual-completion
---      full-chain expansion and chain progress annotations, recent/friend chain
---      follow-ups, travel-aware ready turn-ins, hub-batched turn-ins, and
---      opposing-faction zone penalties, plus priority class quests, unlock
---      chains, and rewards.
+--      in-window dungeons, local-zone momentum (including boosted same-hub /
+--      on-path same-zone ACCEPT quests within ~25 yds), proactive
+--      virtual-completion full-chain expansion and chain progress annotations,
+--      recent/friend chain follow-ups, travel-aware ready turn-ins, hub-batched
+--      turn-ins, and opposing-faction zone penalties, plus priority class
+--      quests, unlock chains, and rewards.
 --   2. Consumes embedded GeneratedData (quests, dungeons, zones, xpCurve,
 --      classScores, indexes) plus live/overridden character state, user
 --      slider weights/toggles, QuestieDB turn-in fallbacks via State, and
@@ -552,7 +553,11 @@ local function ComputeCandidateMetrics(q, action, vState, weights, toggles, data
     elseif action == "COMPLETE" then
         momentum = 18
     elseif targetZoneId == vState.zoneId then
-        momentum = 14
+        if action == "ACCEPT" and (not q.turnin or not q.turnin.zoneId or q.turnin.zoneId == vState.zoneId) and travelMins <= 0.08 then
+            momentum = 16
+        else
+            momentum = 14
+        end
     end
     local isFriendChain = false
     if toggles.locationReorder ~= false and targetZoneId == vState.zoneId and readyCtx then

@@ -8,6 +8,7 @@
 - **5 Scoring Profiles:** `xp_speed`, `class_bis`, `balanced`, `dungeon_focus`, and `skinning_lw` with adjustable 5-axis weights.
 - **Terrain & Gate-Aware Navigation:** Precomputed CSR navigation grid with bidirectional Dijkstra pathfinding across terrain barriers, tunnels, hubs, and flight paths.
 - **Proactive Chain & Turn-In Optimization:** Expands full quest chains ahead of completion (`[Chain X/Y]`), prioritizes nearby ready turn-ins (`[Ready Turn-In]`), and defers distant turn-ins until aligned.
+- **Optimal-Path Available Quest Suggestions:** Continuously discovers eligible unaccepted quests (including unrouted side quests, behind-gap route quests, and quests along your hub/walking corridor) whose pickup, objectives, and turn-in fit the active zone route, surfacing hub and corridor pickups before sending you out to distant objectives.
 - **GPS Auto-Reorder & Friend-Meetup Pivots:** Near-realtime intra-zone step reordering and off-route friend meetup chain detection (`/fqp gps`, `/fqp reorder`).
 - **Configurable Max Quest Level Offset:** Adjustable `-3` to `+5` quest level ceiling via UI slider or `/fqp maxlevel`.
 - **Skip Elite Quests Unless Grouped:** Automatically defers open-world elite quests and their follow-ups while solo (`Skip Elite (Solo)` toggle or `/fqp elite`), unlocking them immediately when you join a party or raid while always keeping completed turn-ins active.
@@ -22,9 +23,9 @@
 You can download a prebuilt release binary directly without cloning the repo:
 
 1. Download the latest archive:
-   - Direct asset (`v1.3.0`): [`ForeverQuestPath-v1.3.0.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.3.0.zip)
+   - Direct asset (`v1.4.0`): [`ForeverQuestPath-v1.4.0.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.4.0.zip)
    - All releases: [`github.com/sebmak/ForeverQuestPath/releases/latest`](https://github.com/sebmak/ForeverQuestPath/releases/latest)
-2. Extract `ForeverQuestPath-v1.3.0.zip` into your WoW Forever AddOns directory:
+2. Extract `ForeverQuestPath-v1.4.0.zip` into your WoW Forever AddOns directory:
    - **macOS:** `/Applications/World of Warcraft/_forever_/Interface/AddOns/`
    - **Windows:** `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\`
 3. Confirm the extracted folder structure contains:

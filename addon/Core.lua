@@ -10,8 +10,9 @@
 --      distinct event categories), PLAYER_DEAD / PLAYER_ALIVE / PLAYER_UNGHOST
 --      dead/ghost location gating & resurrection resume, change-gated
 --      GROUP_ROSTER_UPDATE / PARTY_MEMBERS_CHANGED / RAID_ROSTER_UPDATE group
---      tracking (supporting solo elite skipping via toggles.skipEliteSolo and
---      dungeon quest deferral via toggles.skipDungeons), TAXIMAP_OPENED
+--      tracking (supporting solo elite skipping via toggles.skipEliteSolo,
+--      dungeon quest deferral via toggles.skipDungeons, and optimal-path
+--      unaccepted available quest discovery via State/Scorer), TAXIMAP_OPENED
 --      change-gated flight-master recording, /fqp gate toggle, /fqp elite
 --      toggle, /fqp skipdungeons (/fqp dungeons skip|allow|toggle), /fqp gps
 --      stats telemetry, quest hover info tooltips & click-to-open Quest Log
@@ -30,7 +31,7 @@ end
 addonName = addonName or "ForeverQuestPath"
 
 ns.name = addonName
-ns.version = "1.3.0"
+ns.version = "1.4.0"
 ns.PREFIX = "|cff33d9ffForeverQuestPath|r: "
 
 _G.ForeverQuestPath = ns

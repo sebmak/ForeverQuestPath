@@ -90,8 +90,12 @@ def _run_luajit(script: str) -> tuple[int, str, str]:
 #   and Route/Dungeons/Rewards/Diag tabs), click-to-open Quest Log (modern QuestMapFrame_OpenToQuestDetails,
 #   standalone QuestLogFrame + QuestLog_SetSelection, unaccepted quest-giver pin fallback,
 #   Shift-click chat links, Right-Click waypoint/jump, InCombatLockdown, and Forever controller
-#   InputUtil.IsGamepadUIEnabled guards with 0 frame/region allocations), AddonCompartment,
-#   waypoints, and sync.
+#   InputUtil.IsGamepadUIEnabled guards with 0 frame/region allocations), optimal-path available
+#   unaccepted quest discovery (unrouted side quests like Wetlands Q463 & Redridge Q122/Q124,
+#   behind-gap route quests like Q288/Q472/Q299, same-hub pickup priority over distant newly
+#   accepted objectives like Q98197, corridor pickups like Q469 along active travel, Skip/StepBack,
+#   MaxLv -3 gating, Dynamic Re-Scorer nearby ACCEPT momentum, and 0 frame/region allocations),
+#   AddonCompartment, waypoints, and sync.
 class TestForeverQuestPathAddon(unittest.TestCase):
     """Lua 5.1 / WoW Forever 16001 harness tests for ForeverQuestPath addon."""
 
@@ -3505,7 +3509,7 @@ Mock.FireEvent("ADDON_LOADED", addonName)
 Mock.FireEvent("PLAYER_LOGIN")
 Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
 
-assert(ns.version == "1.3.0", "Expected ns.version == 1.3.0, got " .. tostring(ns.version))
+assert(ns.version == "1.4.0", "Expected ns.version == 1.4.0, got " .. tostring(ns.version))
 assert(type(ns.QuestInfo) == "table", "Expected ns.QuestInfo module to be loaded")
 
 ns.HUD.SetShown(true)
@@ -3897,6 +3901,269 @@ print("QUEST_HOVER_CLICK_OK")
         rc, out, err = _run_luajit(lua_script)
         self.assertEqual(rc, 0, f"Quest hover/click test failed:\nSTDOUT: {out}\nSTDERR: {err}")
         self.assertIn("QUEST_HOVER_CLICK_OK", out)
+
+    def test_optimal_path_unaccepted_available_quest_suggestions(self) -> None:
+        lua_script = f"""
+local Mock = dofile({str(WOW_MOCK_LUA)!r})
+
+-- 1A. Unrouted optimal-path quest discovery in Redridge (Q124 A Baying of Gnolls, prereq 119 done) + Skip/StepBack
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Redknight",
+    realm = "Forever",
+    level = 20,
+    raceName = "Human",
+    raceFile = "Human",
+    raceId = 1,
+    className = "Paladin",
+    classFile = "PALADIN",
+    classId = 2,
+    faction = "Alliance",
+    mapId = 1433,
+    x = 0.259,
+    y = 0.473,
+}})
+Mock.CompleteQuest(119)
+local addonRed, nsRed = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonRed)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+Mock.AdvanceTimers(0.25)
+
+Mock.ResetMetrics()
+local stepsRed = nsRed.State.GetActiveProfileSteps()
+local redCursor = nil
+for idx, st in ipairs(stepsRed) do
+    if st.zoneId == 44 and st.action == "ACCEPT" then
+        redCursor = idx
+        break
+    end
+end
+assert(redCursor ~= nil, "Expected Redridge route step in balanced profile")
+nsRed.State.JumpToStep(redCursor)
+nsRed.State.CheckLivePosition(true)
+
+local foundRedOpt = false
+local curRed, metaRed = nsRed.State.GetCurrentStep()
+if curRed and curRed.questId == 124 and curRed.action == "ACCEPT" then
+    foundRedOpt = true
+end
+for _, st in ipairs(nsRed.State.GetUpcomingSteps(45)) do
+    if st.questId == 124 and st.action == "ACCEPT" then
+        foundRedOpt = true
+        break
+    end
+end
+assert(foundRedOpt, "Expected unrouted Redridge optimal-path ACCEPT 124 (A Baying of Gnolls) near Lakeshire (25.9, 47.3)")
+
+-- 1B. Cross-zone quest exclusion (Q1132 Dustwallow turn-in never suggested in Wetlands) & Skip/StepBack on injected step
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Sprocketstab",
+    realm = "Forever",
+    level = 25,
+    raceName = "Gnome",
+    raceFile = "Gnome",
+    raceId = 7,
+    className = "Rogue",
+    classFile = "ROGUE",
+    classId = 4,
+    faction = "Alliance",
+    mapId = 1437,
+    x = 0.109,
+    y = 0.596,
+}})
+for _, qid in ipairs({{ 279, 281, 284, 285, 286, 98189, 484, 470, 98282, 305, 98197, 463 }}) do
+    Mock.CompleteQuest(qid)
+end
+local addonGap, nsGap = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonGap)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+Mock.AdvanceTimers(0.25)
+
+Mock.ResetMetrics()
+local curGap, metaGap = nsGap.State.GetCurrentStep()
+assert(curGap and curGap.action == "ACCEPT" and curGap.questId == 288,
+    "Expected behind-gap Wetlands quest ACCEPT 288 as next step at (10.9, 59.6), got "
+    .. tostring(curGap and curGap.action) .. " " .. tostring(curGap and curGap.questId))
+assert(metaGap and metaGap.source == "gps_reorder",
+    "Expected gps_reorder source for Q288 suggestion, got " .. tostring(metaGap and metaGap.source))
+
+local saw288, saw472 = false, false
+if curGap.questId == 288 then saw288 = true end
+for _, st in ipairs(nsGap.State.GetUpcomingSteps(40)) do
+    assert(st.questId ~= 1132, "Must NEVER suggest cross-zone Dustwallow turn-in quest Q1132 in Wetlands loop")
+    if st.action == "ACCEPT" then
+        if st.questId == 288 then saw288 = true end
+        if st.questId == 472 then saw472 = true end
+    end
+end
+assert(saw288 and saw472, string.format(
+    "Expected behind-gap Lv25 Menethil quests ACCEPT 288 & ACCEPT 472, got saw288=%s saw472=%s",
+    tostring(saw288), tostring(saw472)))
+
+-- SkipCurrentStep / StepBack cleanly skips and restores injected optimal-path ACCEPT 288 step
+nsGap.State.SkipCurrentStep()
+local afterSkip288 = nsGap.State.GetCurrentStep()
+assert((not afterSkip288) or afterSkip288.questId ~= 288, "Expected SkipCurrentStep to advance past Q288")
+nsGap.State.StepBack()
+local afterBack288 = nsGap.State.GetCurrentStep()
+assert(afterBack288 and afterBack288.action == "ACCEPT" and afterBack288.questId == 288,
+    "Expected StepBack to restore ACCEPT 288, got " .. tostring(afterBack288 and afterBack288.questId))
+
+-- Behind-gap Excavation Site quest Q299 at (38.2, 50.9)
+Mock.SetPlayerPosition(1437, 38.2, 50.9, "Wetlands", false)
+nsGap.State.CheckLivePosition(true)
+local saw299 = false
+local curExc = nsGap.State.GetCurrentStep()
+if curExc and curExc.action == "ACCEPT" and curExc.questId == 299 then saw299 = true end
+for _, st in ipairs(nsGap.State.GetUpcomingSteps(30)) do
+    if st.action == "ACCEPT" and st.questId == 299 then saw299 = true end
+end
+assert(saw299, "Expected behind-gap Lv25 Excavation Site quest ACCEPT 299 near (38.2, 50.9)")
+
+-- 2. Same-hub pickup priority before distant recentAcceptedQuests objective (Q98197 Spoils of War)
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Sprocketstab",
+    realm = "Forever",
+    level = 24,
+    raceName = "Gnome",
+    raceFile = "Gnome",
+    raceId = 7,
+    className = "Rogue",
+    classFile = "ROGUE",
+    classId = 4,
+    faction = "Alliance",
+    mapId = 1437,
+    x = 0.101,
+    y = 0.569,
+}})
+local addonHub, nsHub = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonHub)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+Mock.AdvanceTimers(0.25)
+
+Mock.AcceptQuest(98197, "Spoils of War", 22, false)
+Mock.AdvanceTimers(0.25)
+
+local sHub = nsHub.State.GetCurrentStep()
+assert(sHub and sHub.action == "ACCEPT" and sHub.zoneId == 11,
+    "Expected same-hub ACCEPT step before distant COMPLETE 98197, got "
+    .. tostring(sHub and sHub.action) .. " " .. tostring(sHub and sHub.questId))
+
+local upHub = nsHub.State.GetUpcomingSteps(25)
+local complete98197Pos = nil
+local complete279Pos = nil
+local hubAcceptSet = {{}}
+hubAcceptSet[sHub.questId] = 0
+for i, st in ipairs(upHub) do
+    if st.questId == 98197 and st.action == "COMPLETE" and not complete98197Pos then
+        complete98197Pos = i
+    elseif st.questId == 279 and st.action == "COMPLETE" and not complete279Pos then
+        complete279Pos = i
+    elseif st.action == "ACCEPT" and st.x and st.y and st.x <= 15.0 and st.y >= 50.0 and not hubAcceptSet[st.questId] then
+        hubAcceptSet[st.questId] = i
+    end
+end
+assert(complete98197Pos ~= nil and complete279Pos ~= nil, "Expected COMPLETE 98197 and COMPLETE 279 in upcoming steps")
+assert(hubAcceptSet[484] and hubAcceptSet[484] < complete98197Pos,
+    "Expected west-pier ACCEPT 484 before COMPLETE 98197")
+assert(hubAcceptSet[279] and hubAcceptSet[279] < complete98197Pos,
+    "Expected west-pier ACCEPT 279 before COMPLETE 98197")
+for _, rq in ipairs({{ 484, 279, 470, 98282, 305 }}) do
+    assert(hubAcceptSet[rq] and hubAcceptSet[rq] < complete279Pos,
+        string.format("Expected Menethil ACCEPT %d (pos=%s) before leaving town for COMPLETE 279 (pos=%d)",
+            rq, tostring(hubAcceptSet[rq]), complete279Pos))
+end
+
+-- Accepting eastern Wetlands quest Q470 at (11.8, 58.0) must pick up remaining hub quests before COMPLETE 470
+Mock.SetPlayerPosition(1437, 11.8, 58.0, "Wetlands", false)
+Mock.AcceptQuest(470, "Digging Through the Ooze", 24, false)
+Mock.AdvanceTimers(0.25)
+local sHub470 = nsHub.State.GetCurrentStep()
+assert(sHub470 and sHub470.action == "ACCEPT" and sHub470.questId == 98282,
+    "Expected adjacent hub ACCEPT 98282 after accepting Q470 at (11.8, 58.0), got "
+    .. tostring(sHub470 and sHub470.action) .. " " .. tostring(sHub470 and sHub470.questId))
+local upHub470 = nsHub.State.GetUpcomingSteps(20)
+local complete470Pos, saw305Before470 = nil, false
+for i, st in ipairs(upHub470) do
+    if st.questId == 470 and st.action == "COMPLETE" and not complete470Pos then
+        complete470Pos = i
+    elseif st.action == "ACCEPT" and st.questId == 305 and not complete470Pos then
+        saw305Before470 = true
+    end
+end
+assert(complete470Pos ~= nil and saw305Before470,
+    "Expected Menethil ACCEPT 305 before leaving town for distant COMPLETE 470")
+
+-- 3. Corridor pickup mid-travel + MaxLv -3 gating + Dynamic Re-Scorer + 0 UI allocations
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Sprocketstab",
+    realm = "Forever",
+    level = 24,
+    raceName = "Gnome",
+    raceFile = "Gnome",
+    raceId = 7,
+    className = "Rogue",
+    classFile = "ROGUE",
+    classId = 4,
+    faction = "Alliance",
+    mapId = 1437,
+    x = 0.485,
+    y = 0.390,
+}})
+for _, qid in ipairs({{ 463, 472, 305, 281, 284, 285, 286, 98189, 98221, 98197, 279, 470, 98282, 484 }}) do
+    Mock.CompleteQuest(qid)
+end
+local addonCor, nsCor = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonCor)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+Mock.AdvanceTimers(0.25)
+
+Mock.ResetMetrics()
+Mock.AcceptQuest(276, "Tramping Paws", 21, false)
+Mock.AdvanceTimers(0.25)
+
+local curCor = nsCor.State.GetCurrentStep()
+assert(curCor and curCor.action == "ACCEPT" and curCor.questId == 469,
+    "Expected corridor pickup ACCEPT 469 (49.9, 39.4) before distant COMPLETE 276 (59.9, 73.2), got "
+    .. tostring(curCor and curCor.action) .. " " .. tostring(curCor and curCor.questId))
+
+-- MaxLevelOffset = -3 (cap Lv 21) allows Lv 21 Q469 & Q276 while excluding Lv 22+ quests like Q294 (Lv25)
+nsCor.State.SetMaxLevelOffset(-3)
+for _, st in ipairs(nsCor.State.GetUpcomingSteps(25)) do
+    if st.questId then
+        local qd = nsCor.GetData().quests[st.questId]
+        local qlv = qd and tonumber(qd.questLevel) or 0
+        if qlv > 0 and not nsCor.State.GetQuestLogEntry(st.questId) then
+            assert(qlv <= 21, string.format("MaxLv=-3 must exclude unaccepted Lv%d quest %d", qlv, st.questId))
+        end
+    end
+end
+nsCor.State.SetMaxLevelOffset(2)
+
+-- Dynamic Re-Scorer boosts same-zone nearby ACCEPT within ~25 yds when player only holds distant active quest
+Mock.SetPlayerPosition(1437, 10.8, 59.6, "Wetlands", false)
+nsCor.State.CheckLivePosition(true)
+local dynSteps = nsCor.Scorer.GetDynamicSteps(nsCor.State.GetPlayerInfo(), nsCor.GetActiveWeights(), nsCor.charDB.toggles, 10)
+assert(dynSteps and dynSteps[1] and dynSteps[1].action == "ACCEPT" and dynSteps[1].zoneId == 11,
+    "Expected Scorer.GetDynamicSteps at Menethil (10.8, 59.6) to suggest nearby ACCEPT before eastern COMPLETE 276, got "
+    .. tostring(dynSteps and dynSteps[1] and dynSteps[1].action) .. " " .. tostring(dynSteps and dynSteps[1] and dynSteps[1].questId))
+
+local mOpt = Mock.GetMetrics()
+assert(mOpt.createFrameCalls == 0, "Expected 0 CreateFrame calls during optimal-path discovery, got " .. tostring(mOpt.createFrameCalls))
+assert(mOpt.createRegionCalls == 0, "Expected 0 CreateRegion calls during optimal-path discovery, got " .. tostring(mOpt.createRegionCalls))
+assert(#Mock.errors == 0, "Unexpected Lua errors in optimal-path test: " .. table.concat(Mock.errors, "; "))
+print("OPTIMAL_PATH_UNACCEPTED_OK")
+"""
+        rc, out, err = _run_luajit(lua_script)
+        self.assertEqual(rc, 0, f"Optimal-path unaccepted quest test failed:\\nSTDOUT: {out}\\nSTDERR: {err}")
+        self.assertIn("OPTIMAL_PATH_UNACCEPTED_OK", out)
 
     def test_deployed_addon_matches_source_directory(self) -> None:
         self.assertTrue(ADDON_DST.exists(), f"Installed addon directory missing: {ADDON_DST}")
