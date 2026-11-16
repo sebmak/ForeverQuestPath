@@ -17,14 +17,19 @@ from pathlib import Path
 
 
 # Rules for AddonReleasePackager:
-# 1. Version and manifest entries must be read directly from addon/ForeverQuestPath.toc
-#    and validated with scripts/install_addon.sh --check-only before packaging.
-# 2. The release ZIP must wrap all addon files under a top-level ForeverQuestPath/
-#    directory using POSIX forward slashes and exclude hidden/macOS metadata files.
-# 3. Every archive must pass zipfile integrity checks, manifest membership checks,
-#    and clean temporary extraction checks, alongside a generated .sha256 checksum file.
+# 1. Version, title, notes, interface version, and manifest entries must be read
+#    directly from addon/ForeverQuestPath.toc and validated with
+#    scripts/install_addon.sh --check-only (including ForeverQuestPath_Forever.toc
+#    and Media/Icon.png) before packaging.
+# 2. The release ZIP must be named ForeverQuestPath-v<version>-forever.zip, wrap
+#    all addon files under ForeverQuestPath/ using POSIX forward slashes, and
+#    accompany dist/release.json (WowUp / BigWigs packager metadata) + .sha256.
+# 3. Every archive must pass zipfile integrity checks, manifest & WowUp asset
+#    membership checks, and clean temporary extraction checks.
 # 4. Optional GitHub release publishing must read HTTPS credentials in memory via
-#    `git credential fill` without ever printing, logging, or persisting secrets.
+#    `git credential fill` without printing secrets, sync best-effort repo
+#    metadata/topics, remove stale unsuffixed archives, and upload zip,
+#    release.json, and sha256 assets.
 class AddonReleasePackager:
     """Builds, verifies, and optionally publishes ForeverQuestPath release archives."""
 
@@ -33,8 +38,13 @@ class AddonReleasePackager:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
     ADDON_DIR = PROJECT_ROOT / "addon"
     TOC_PATH = ADDON_DIR / "ForeverQuestPath.toc"
+    FOREVER_TOC_NAME = "ForeverQuestPath_Forever.toc"
+    ICON_REL_PATH = "Media/Icon.png"
     INSTALL_SCRIPT = PROJECT_ROOT / "scripts" / "install_addon.sh"
     DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "dist"
+    RELEASE_FLAVOR = "forever"
+    RELEASE_JSON_NAME = "release.json"
+    GITHUB_TOPICS = ("wow-addon", "world-of-warcraft", "wow-forever", "wowup")
     GITHUB_API_BASE = "https://api.github.com"
     GITHUB_UPLOADS_BASE = "https://uploads.github.com"
     HTTP_TIMEOUT_SECONDS = 60
@@ -48,19 +58,35 @@ class AddonReleasePackager:
         self.output_dir = (output_dir or self.DEFAULT_OUTPUT_DIR).resolve()
         self.repo = repo
 
-    def parse_toc(self) -> tuple[str, list[str]]:
-        """Return (addon_version, manifest_relative_paths) from ForeverQuestPath.toc."""
+    def parse_toc_metadata(self) -> dict:
+        """Return parsed TOC headers (version, title, notes, interface) and file entries."""
         if not self.toc_path.is_file():
             raise FileNotFoundError(f"Missing .toc file: {self.toc_path}")
 
         version: str | None = None
+        title: str | None = None
+        notes: str | None = None
+        interface_ver: int | None = None
         toc_files: list[str] = []
         for raw_line in self.toc_path.read_text(encoding="utf-8").splitlines():
             line = raw_line.strip()
             if not line:
                 continue
-            if line.startswith("## Version:"):
-                version = line.split(":", 1)[1].strip()
+            if line.startswith("## "):
+                key_val = line[3:].split(":", 1)
+                if len(key_val) == 2:
+                    key, val = key_val[0].strip(), key_val[1].strip()
+                    if key == "Version":
+                        version = val
+                    elif key == "Title":
+                        title = val
+                    elif key == "Notes" and not notes:
+                        notes = val
+                    elif key == "Interface":
+                        try:
+                            interface_ver = int(val.split(",", 1)[0].strip())
+                        except ValueError as exc:
+                            raise RuntimeError(f"Invalid ## Interface header in {self.toc_path}: {val}") from exc
                 continue
             if line.startswith("#"):
                 continue
@@ -68,9 +94,22 @@ class AddonReleasePackager:
 
         if not version:
             raise RuntimeError(f"Missing ## Version header in {self.toc_path}")
+        if interface_ver is None:
+            raise RuntimeError(f"Missing ## Interface header in {self.toc_path}")
         if not toc_files:
             raise RuntimeError(f"No addon files listed in {self.toc_path}")
-        return version, toc_files
+        return {
+            "version": version,
+            "title": title or self.ADDON_FOLDER_NAME,
+            "notes": notes or "",
+            "interface": interface_ver,
+            "toc_files": toc_files,
+        }
+
+    def parse_toc(self) -> tuple[str, list[str]]:
+        """Return (addon_version, manifest_relative_paths) from ForeverQuestPath.toc."""
+        meta = self.parse_toc_metadata()
+        return meta["version"], meta["toc_files"]
 
     def validate_addon_sources(self) -> None:
         """Run scripts/install_addon.sh --check-only to verify .toc and Lua syntax."""
@@ -100,9 +139,10 @@ class AddonReleasePackager:
 
             names = zf.namelist()
             name_set = set(names)
-            expected_toc = f"{self.ADDON_FOLDER_NAME}/ForeverQuestPath.toc"
-            if expected_toc not in name_set:
-                raise RuntimeError(f"Archive missing {expected_toc}")
+            for req_rel in ("ForeverQuestPath.toc", self.FOREVER_TOC_NAME, self.ICON_REL_PATH):
+                expected_entry = f"{self.ADDON_FOLDER_NAME}/{req_rel}"
+                if expected_entry not in name_set:
+                    raise RuntimeError(f"Archive missing required entry: {expected_entry}")
 
             for rel in toc_files:
                 expected_entry = f"{self.ADDON_FOLDER_NAME}/{rel}"
@@ -115,9 +155,10 @@ class AddonReleasePackager:
 
             with tempfile.TemporaryDirectory() as tmp_dir:
                 zf.extractall(tmp_dir)
-                extracted_toc = Path(tmp_dir) / self.ADDON_FOLDER_NAME / "ForeverQuestPath.toc"
-                if not extracted_toc.is_file():
-                    raise RuntimeError(f"Extracted archive missing {extracted_toc}")
+                extracted_root = Path(tmp_dir) / self.ADDON_FOLDER_NAME
+                for req_rel in ("ForeverQuestPath.toc", self.FOREVER_TOC_NAME, self.ICON_REL_PATH):
+                    if not (extracted_root / req_rel).is_file():
+                        raise RuntimeError(f"Extracted archive missing {req_rel}")
 
     @staticmethod
     def _compute_sha256(file_path: Path) -> str:
@@ -128,20 +169,27 @@ class AddonReleasePackager:
                 digest.update(chunk)
         return digest.hexdigest()
 
-    def build_archive(self) -> tuple[str, Path, Path, str]:
-        """Validate addon files, build verified ZIP archive + SHA-256 file in output_dir."""
-        version, toc_files = self.parse_toc()
+    def build_archive(self) -> tuple[str, Path, Path, Path, str]:
+        """Validate addon files and build verified -forever.zip, .sha256, and release.json."""
+        meta = self.parse_toc_metadata()
+        version: str = meta["version"]
+        title: str = meta["title"]
+        interface_ver: int = meta["interface"]
+        toc_files: list[str] = meta["toc_files"]
         self.validate_addon_sources()
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        zip_name = f"{self.ADDON_FOLDER_NAME}-v{version}.zip"
+        for stale in list(self.output_dir.glob(f"{self.ADDON_FOLDER_NAME}-*.zip")) + list(
+            self.output_dir.glob(f"{self.ADDON_FOLDER_NAME}-*.zip.sha256")
+        ):
+            stale.unlink()
+
+        zip_name = f"{self.ADDON_FOLDER_NAME}-v{version}-{self.RELEASE_FLAVOR}.zip"
         zip_path = self.output_dir / zip_name
         sha_path = self.output_dir / f"{zip_name}.sha256"
+        release_json_path = self.output_dir / self.RELEASE_JSON_NAME
 
         addon_files = self._iter_addon_files()
-        if zip_path.exists():
-            zip_path.unlink()
-
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
             for src_path, arcname in addon_files:
                 zf.write(src_path, arcname=arcname)
@@ -150,9 +198,28 @@ class AddonReleasePackager:
         sha256_hex = self._compute_sha256(zip_path)
         sha_path.write_text(f"{sha256_hex}  {zip_name}\n", encoding="utf-8")
 
+        release_payload = {
+            "releases": [
+                {
+                    "name": title,
+                    "version": f"v{version}",
+                    "filename": zip_name,
+                    "nolib": False,
+                    "metadata": [
+                        {
+                            "flavor": self.RELEASE_FLAVOR,
+                            "interface": interface_ver,
+                        }
+                    ],
+                }
+            ]
+        }
+        release_json_path.write_text(json.dumps(release_payload, indent=2) + "\n", encoding="utf-8")
+
         print(f"Built {zip_path} ({zip_path.stat().st_size} bytes, {len(addon_files)} files)")
+        print(f"Manifest ({release_json_path.name}): flavor={self.RELEASE_FLAVOR}, interface={interface_ver}")
         print(f"SHA-256 ({sha_path.name}): {sha256_hex}")
-        return version, zip_path, sha_path, sha256_hex
+        return version, zip_path, sha_path, release_json_path, sha256_hex
 
     def _load_github_auth_header(self) -> str:
         """Read HTTPS GitHub credentials in memory via `git credential fill`."""
@@ -207,12 +274,43 @@ class AddonReleasePackager:
                 return None
             return json.loads(payload.decode("utf-8"))
 
-    @staticmethod
-    def _format_release_notes(version: str, zip_name: str, sha256_hex: str) -> str:
+    def sync_github_repo_metadata(self, auth_header: str, description: str, homepage: str) -> None:
+        """Best-effort sync of repository description, homepage, and WowUp discovery topics."""
+        repo_url = f"{self.GITHUB_API_BASE}/repos/{self.repo}"
+        try:
+            self._github_request(
+                "PATCH",
+                repo_url,
+                auth_header,
+                json_body={"description": description, "homepage": homepage},
+            )
+            self._github_request(
+                "PUT",
+                f"{repo_url}/topics",
+                auth_header,
+                json_body={"names": list(self.GITHUB_TOPICS)},
+            )
+            print(f"Synced GitHub metadata & topics for {self.repo}")
+        except urllib.error.HTTPError as exc:
+            err_msg = exc.read().decode("utf-8", errors="replace")
+            print(f"WARN: Skipped GitHub repository metadata sync (HTTP {exc.code}): {err_msg}")
+
+    @classmethod
+    def _format_release_notes(
+        cls,
+        version: str,
+        zip_name: str,
+        sha256_hex: str,
+        interface_version: int = 16001,
+    ) -> str:
         """Build user-facing GitHub Release markdown notes."""
+        repo_url = f"https://github.com/{cls.DEFAULT_REPO}"
         return (
-            f"## ForeverQuestPath v{version} (WoW Forever `16001`)\n\n"
-            "### Installation\n"
+            f"## ForeverQuestPath v{version} (WoW Forever `{interface_version}`)\n\n"
+            "### Install via WowUp\n"
+            "1. Open **WowUp**, select your **WoW Forever** installation, and open **Get Addons -> Install from URL**.\n"
+            f"2. Paste `{repo_url}` and click **Import**.\n\n"
+            "### Manual Installation\n"
             f"1. Download **`{zip_name}`** below.\n"
             "2. Extract it into your WoW Forever `Interface/AddOns/` directory:\n"
             "   - **macOS:** `/Applications/World of Warcraft/_forever_/Interface/AddOns/`\n"
@@ -228,13 +326,20 @@ class AddonReleasePackager:
         version: str,
         zip_path: Path,
         sha_path: Path,
+        release_json_path: Path,
         sha256_hex: str,
+        *,
+        notes: str = "",
+        interface_version: int = 16001,
     ) -> dict:
-        """Create or update GitHub release `v<version>` and upload zip + sha256 assets."""
+        """Create or update GitHub release `v<version>`, sync metadata, and upload assets."""
         auth_header = self._load_github_auth_header()
+        description = notes or "Optimal 1-60 quest routing addon for WoW Forever (Interface 16001)."
+        self.sync_github_repo_metadata(auth_header, description, f"https://github.com/{self.repo}")
+
         tag = f"v{version}"
         title = f"{self.ADDON_FOLDER_NAME} {tag}"
-        body = self._format_release_notes(version, zip_path.name, sha256_hex)
+        body = self._format_release_notes(version, zip_path.name, sha256_hex, interface_version)
         releases_url = f"{self.GITHUB_API_BASE}/repos/{self.repo}/releases"
 
         release: dict | None = None
@@ -277,8 +382,21 @@ class AddonReleasePackager:
 
         upload_specs = [
             (zip_path, "application/zip"),
+            (release_json_path, "application/json"),
             (sha_path, "text/plain"),
         ]
+        stale_names = {
+            f"{self.ADDON_FOLDER_NAME}-v{version}.zip",
+            f"{self.ADDON_FOLDER_NAME}-v{version}.zip.sha256",
+        }
+        for stale_name in stale_names:
+            if stale_name in existing_assets:
+                self._github_request(
+                    "DELETE",
+                    f"{releases_url}/assets/{existing_assets[stale_name]}",
+                    auth_header,
+                )
+
         uploaded_assets: list[dict] = []
         for asset_path, mime_type in upload_specs:
             if asset_path.name in existing_assets:
@@ -329,9 +447,18 @@ def main() -> None:
     args = parser.parse_args()
 
     packager = AddonReleasePackager(output_dir=args.output_dir, repo=args.repo)
-    version, zip_path, sha_path, sha256_hex = packager.build_archive()
+    meta = packager.parse_toc_metadata()
+    version, zip_path, sha_path, release_json_path, sha256_hex = packager.build_archive()
     if args.publish_github:
-        packager.publish_github_release(version, zip_path, sha_path, sha256_hex)
+        packager.publish_github_release(
+            version,
+            zip_path,
+            sha_path,
+            release_json_path,
+            sha256_hex,
+            notes=meta["notes"],
+            interface_version=meta["interface"],
+        )
 
 
 if __name__ == "__main__":

@@ -31,5 +31,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/ForeverQuestPath-*.zip
-            dist/ForeverQuestPath-*.zip.sha256
+            dist/ForeverQuestPath-*-forever.zip
+            dist/ForeverQuestPath-*-forever.zip.sha256
+            dist/release.json

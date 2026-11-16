@@ -1,0 +1,17 @@
+package-as: ForeverQuestPath
+enable-nolib-creation: no
+
+move-folders:
+  ForeverQuestPath/addon: ForeverQuestPath
+
+ignore:
+  - .github
+  - .previews
+  - data
+  - dist
+  - routes
+  - scraper
+  - scripts
+  - sim
+  - tests
+  - README.md

@@ -20,14 +20,26 @@
 
 ---
 
+## Install with WowUp (Recommended)
+
+You can install and auto-update **ForeverQuestPath** for **WoW Forever (`Interface: 16001`)** directly through **WowUp**:
+
+1. Open **WowUp** and select your **WoW Forever** client installation.
+2. Go to **Get Addons -> Install from URL**.
+3. Paste the GitHub repository URL:
+   - https://github.com/sebmak/ForeverQuestPath
+4. Click **Import** / **Install** — WowUp reads `release.json`, `ForeverQuestPath-v1.6.1-forever.zip`, and `ForeverQuestPath_Forever.toc` automatically.
+
+---
+
 ## Quick Install (Release ZIP)
 
 You can download a prebuilt release binary directly without cloning the repo:
 
 1. Download the latest archive:
-   - Direct asset (`v1.6.0`): [`ForeverQuestPath-v1.6.0.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.6.0.zip)
+   - Direct asset (`v1.6.1`): [`ForeverQuestPath-v1.6.1-forever.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.6.1-forever.zip)
    - All releases: [`github.com/sebmak/ForeverQuestPath/releases/latest`](https://github.com/sebmak/ForeverQuestPath/releases/latest)
-2. Extract `ForeverQuestPath-v1.6.0.zip` into your WoW Forever AddOns directory:
+2. Extract `ForeverQuestPath-v1.6.1-forever.zip` into your WoW Forever AddOns directory:
    - **macOS:** `/Applications/World of Warcraft/_forever_/Interface/AddOns/`
    - **Windows:** `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\`
 3. Confirm the extracted folder structure contains:

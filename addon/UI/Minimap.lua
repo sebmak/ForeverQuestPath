@@ -2,7 +2,8 @@
 -- UI/Minimap.lua
 -- Rules:
 --   1. Provides the draggable minimap launcher button (ForeverQuestPathMinimapButton)
---      and WoW Forever AddonCompartment callbacks for quick HUD/Window/Pin access.
+--      and WoW Forever AddonCompartment callbacks using the bundled custom
+--      Media/Icon.png emblem for quick HUD/Window/Pin access.
 --   2. Respects ns.db.showMinimap and persists ns.db.minimapAngle cleanly.
 --   3. Safe no-op in headless Lua test harnesses where Minimap/GameTooltip/CreateFrame
 --      may be absent or partial.
@@ -13,7 +14,7 @@ local _, ns = ...
 local MinimapMod = {}
 ns.Minimap = MinimapMod
 
-local ICON_TEXTURE = "Interface\\Icons\\INV_Misc_Map_01"
+local ICON_TEXTURE = "Interface\\AddOns\\ForeverQuestPath\\Media\\Icon.png"
 local DEFAULT_ANGLE = 215
 local RADIUS_OFFSET = 5
 

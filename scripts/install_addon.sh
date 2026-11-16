@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Rules for install_addon.sh:
-# - Validates ForeverQuestPath.toc headers (## Interface: 16001 and SavedVariables),
+# - Validates ForeverQuestPath.toc & ForeverQuestPath_Forever.toc headers
+#   (## Interface: 16001, SavedVariables, and byte parity), bundled Media/Icon.png,
 #   manifest entries, and Lua syntax/bytecode before touching AddOns.
 # - Syncs addon/ to the target WoW Forever AddOns directory with rsync --delete,
 #   refreshes the top-level AddOn directory timestamp for Finder/WowUp visibility,
@@ -62,8 +63,22 @@ while [[ $# -gt 0 ]]; do
 done
 
 TOC_FILE="${ADDON_SRC}/ForeverQuestPath.toc"
+FOREVER_TOC_FILE="${ADDON_SRC}/ForeverQuestPath_Forever.toc"
+ICON_FILE="${ADDON_SRC}/Media/Icon.png"
 if [[ ! -f "${TOC_FILE}" ]]; then
     echo "ERROR: Missing .toc file at ${TOC_FILE}" >&2
+    exit 1
+fi
+if [[ ! -f "${FOREVER_TOC_FILE}" ]]; then
+    echo "ERROR: Missing WoW Forever .toc file at ${FOREVER_TOC_FILE}" >&2
+    exit 1
+fi
+if ! cmp -s "${TOC_FILE}" "${FOREVER_TOC_FILE}"; then
+    echo "ERROR: ${FOREVER_TOC_FILE} must match ${TOC_FILE} byte-for-byte" >&2
+    exit 1
+fi
+if [[ ! -f "${ICON_FILE}" ]]; then
+    echo "ERROR: Missing bundled icon file at ${ICON_FILE}" >&2
     exit 1
 fi
 
@@ -258,6 +273,14 @@ touch "${ADDON_DEST}"
 echo "[4/4] Verifying synced destination..."
 if [[ ! -f "${ADDON_DEST}/ForeverQuestPath.toc" ]]; then
     echo "ERROR: Destination missing ForeverQuestPath.toc after sync" >&2
+    exit 1
+fi
+if [[ ! -f "${ADDON_DEST}/ForeverQuestPath_Forever.toc" ]]; then
+    echo "ERROR: Destination missing ForeverQuestPath_Forever.toc after sync" >&2
+    exit 1
+fi
+if [[ ! -f "${ADDON_DEST}/Media/Icon.png" ]]; then
+    echo "ERROR: Destination missing Media/Icon.png after sync" >&2
     exit 1
 fi
 

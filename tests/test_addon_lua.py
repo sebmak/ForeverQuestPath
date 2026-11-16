@@ -1,9 +1,13 @@
 """Independent Lua/API verification tests for ForeverQuestPath addon and WoW deployment."""
 
 import hashlib
+import importlib.util
 import json
+import struct
 import subprocess
+import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 PROJECT_ROOT = Path("/Users/sebastianmakinson/Documents/ForeverQuestPath")
@@ -95,7 +99,10 @@ def _run_luajit(script: str) -> tuple[int, str, str]:
 #   behind-gap route quests like Q288/Q472/Q299, same-hub pickup priority over distant newly
 #   accepted objectives like Q98197, corridor pickups like Q469 along active travel, Skip/StepBack,
 #   MaxLv -3 gating, Dynamic Re-Scorer nearby ACCEPT momentum, and 0 frame/region allocations),
-#   AddonCompartment, waypoints, and sync.
+#   AddonCompartment, waypoints, WowUp GitHub/Hub packaging metadata (dual
+#   ForeverQuestPath_Forever.toc, Media/Icon.png, .previews/social-preview.png,
+#   .pkgmeta, release.json with flavor="forever" & interface=16001, and
+#   -forever.zip release asset), and sync.
 class TestForeverQuestPathAddon(unittest.TestCase):
     """Lua 5.1 / WoW Forever 16001 harness tests for ForeverQuestPath addon."""
 
@@ -3509,7 +3516,7 @@ Mock.FireEvent("ADDON_LOADED", addonName)
 Mock.FireEvent("PLAYER_LOGIN")
 Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
 
-assert(ns.version == "1.6.0", "Expected ns.version == 1.6.0, got " .. tostring(ns.version))
+assert(ns.version == "1.6.1", "Expected ns.version == 1.6.1, got " .. tostring(ns.version))
 assert(type(ns.QuestInfo) == "table", "Expected ns.QuestInfo module to be loaded")
 
 ns.HUD.SetShown(true)
@@ -4882,6 +4889,75 @@ print("ANTI_SHUFFLING_STABILITY_OK")
         rc, out, err = _run_luajit(lua_script)
         self.assertEqual(rc, 0, f"Anti-shuffling stability test failed:\nSTDOUT: {out}\nSTDERR: {err}")
         self.assertIn("ANTI_SHUFFLING_STABILITY_OK", out)
+
+    def test_wowup_github_packaging_and_metadata(self) -> None:
+        forever_toc_path = ADDON_SRC / "ForeverQuestPath_Forever.toc"
+        icon_path = ADDON_SRC / "Media" / "Icon.png"
+        preview_path = PROJECT_ROOT / ".previews" / "social-preview.png"
+        pkgmeta_path = PROJECT_ROOT / ".pkgmeta"
+
+        self.assertTrue(TOC_PATH.is_file(), f"Missing primary TOC: {TOC_PATH}")
+        self.assertTrue(forever_toc_path.is_file(), f"Missing Forever TOC: {forever_toc_path}")
+        self.assertEqual(
+            TOC_PATH.read_bytes(),
+            forever_toc_path.read_bytes(),
+            "ForeverQuestPath.toc and ForeverQuestPath_Forever.toc must match byte-for-byte",
+        )
+
+        toc_text = TOC_PATH.read_text(encoding="utf-8")
+        for header in (
+            "## Interface: 16001",
+            "## Version: 1.6.1",
+            "## Category: Quests",
+            "## X-Category: Quests",
+            "## Website: https://github.com/sebmak/ForeverQuestPath",
+            "## X-Website: https://github.com/sebmak/ForeverQuestPath",
+            r"## IconTexture: Interface\AddOns\ForeverQuestPath\Media\Icon.png",
+        ):
+            self.assertIn(header, toc_text, f"Missing WowUp/TOC header: {header}")
+
+        self.assertTrue(pkgmeta_path.is_file(), f"Missing .pkgmeta: {pkgmeta_path}")
+        pkgmeta_text = pkgmeta_path.read_text(encoding="utf-8")
+        self.assertIn("package-as: ForeverQuestPath", pkgmeta_text)
+
+        for img_path, expected_dims in ((icon_path, (256, 256)), (preview_path, (1280, 640))):
+            self.assertTrue(img_path.is_file(), f"Missing image asset: {img_path}")
+            raw = img_path.read_bytes()
+            self.assertEqual(raw[:8], b"\x89PNG\r\n\x1a\n", f"{img_path} must be valid PNG")
+            dims = struct.unpack(">II", raw[16:24])
+            self.assertEqual(dims, expected_dims, f"{img_path} pixel dimensions mismatch: {dims}")
+
+        packager_path = PROJECT_ROOT / "scripts" / "package_release.py"
+        spec = importlib.util.spec_from_file_location("package_release", packager_path)
+        self.assertIsNotNone(spec)
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            packager = mod.AddonReleasePackager(output_dir=Path(tmp_dir))
+            version, zip_path, sha_path, release_json_path, sha256_hex = packager.build_archive()
+
+            self.assertEqual(version, "1.6.1")
+            self.assertEqual(zip_path.name, "ForeverQuestPath-v1.6.1-forever.zip")
+            self.assertTrue(zip_path.is_file())
+            self.assertTrue(sha_path.is_file())
+            self.assertTrue(release_json_path.is_file())
+            self.assertIn(sha256_hex, sha_path.read_text(encoding="utf-8"))
+
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                names = set(zf.namelist())
+                self.assertIn("ForeverQuestPath/ForeverQuestPath.toc", names)
+                self.assertIn("ForeverQuestPath/ForeverQuestPath_Forever.toc", names)
+                self.assertIn("ForeverQuestPath/Media/Icon.png", names)
+
+            release_meta = json.loads(release_json_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(release_meta.get("releases", [])), 1)
+            rel_entry = release_meta["releases"][0]
+            self.assertIs(rel_entry["nolib"], False)
+            self.assertEqual(rel_entry["version"], "v1.6.1")
+            self.assertEqual(rel_entry["filename"], "ForeverQuestPath-v1.6.1-forever.zip")
+            self.assertEqual(rel_entry["metadata"], [{"flavor": "forever", "interface": 16001}])
 
     def test_deployed_addon_matches_source_directory(self) -> None:
         self.assertTrue(ADDON_DST.exists(), f"Installed addon directory missing: {ADDON_DST}")
