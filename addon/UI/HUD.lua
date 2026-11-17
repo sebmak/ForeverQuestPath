@@ -4,7 +4,7 @@
 --   1. Compact, movable HUD Tracker displaying the bundled addon header icon
 --      (ns.ICON_TEXTURE) and Next Step card (action,
 --      quest/target, NPC & coords / "Inside Dungeon", travel note, XP/Gold/
---      Bag/<Class> BiS/Skin/LW/Elite/Dungeon/In Dungeon/Ready Turn-In/Friend
+--      Bag/<Class> BiS/12-Profession Badges/Elite/Dungeon/In Dungeon/Ready Turn-In/Friend
 --      Chain/GPS Reorder/Chain Progress badges, "Why this step?"), active MaxLv
 --      cap, GPS/instance status, Grouped/No Elite/Elite All + No Dung/Dung On/
 --      Dung Active indicator, Ready Turn-Ins counter, Skip / Back / Reset / Pin
@@ -162,14 +162,27 @@ local function FormatBadges(step, player)
         parts[#parts + 1] = string.format("|cfffff569%s BiS %d|r", bisClass, math.floor(bisScore + 0.5))
     end
     local isLW, isSkin, skinScore = GetStepProfBadges(step)
-    if isLW then
-        parts[#parts + 1] = "|cffb87333[LW]|r"
+    local profBadge = nil
+    if ns.Professions and ns.Professions.FormatQuestBadge then
+        local data = ns.GetData and ns.GetData() or nil
+        local q = qid and data and data.quests and data.quests[qid] or nil
+        profBadge = ns.Professions.FormatQuestBadge(q, b, player and player.professions, true)
     end
-    if isSkin then
-        if skinScore > 0 then
+    if profBadge then
+        parts[#parts + 1] = profBadge
+        if isSkin and (not profBadge:find("Skin", 1, true)) and skinScore > 0 then
             parts[#parts + 1] = string.format("|cffd9a05b[Skin %d]|r", math.floor(skinScore + 0.5))
-        else
-            parts[#parts + 1] = "|cffd9a05b[Skin]|r"
+        end
+    else
+        if isLW then
+            parts[#parts + 1] = "|cffb87333[LW]|r"
+        end
+        if isSkin then
+            if skinScore > 0 then
+                parts[#parts + 1] = string.format("|cffd9a05b[Skin %d]|r", math.floor(skinScore + 0.5))
+            else
+                parts[#parts + 1] = "|cffd9a05b[Skin]|r"
+            end
         end
     end
     if b.unlocksDungeon and b.unlocksDungeon ~= "" then

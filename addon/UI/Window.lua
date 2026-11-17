@@ -10,8 +10,11 @@
 --      Sliders, Max Quest Level Offset Slider (-3..+5, default +2) with
 --      prevNonRedMaxLevelOffset preservation across Allow Red (+5) toggles,
 --      Multi-Race/Class Selector, Auto-Reorder (GPS), Skip Elite (Solo),
---      Skip Dungeons & Skinning/LW Toggles, Dungeon Unlocks & Special Rewards,
---      and Diagnostics/Settings window (/fqp).
+--      Skip Dungeons, Universal 12-Profession Prioritization & Lazy Checklist
+--      Picker, Dungeon Unlocks & Special Rewards (including "Profs" filter),
+--      Leveling Journey Stats tab (Avg Time/Level, XP/hr, Quest vs Combat XP,
+--      ETA next level & 60, Distance Traveled, Per-Level & Per-Zone breakdowns,
+--      Gold/hr, Deaths & /played sync), and Diagnostics/Settings window (/fqp).
 --   2. Uses fixed-viewport pooled ScrollFrame + vertical Slider lists (<= 22
 --      row frames per list, O(1) frame allocation), pooled baseRowPool and
 --      overlayRowPool row descriptor reuse across rebuilds, preservation of
@@ -40,8 +43,9 @@
 --      rows show full quest info/instructions tooltips on hover (via
 --      UI/QuestInfo.lua) and open the Quest Log to that quest on Left-Click
 --      (with Right-Click / Ctrl-Click jump-to-step or pin-waypoint actions).
---   4. Exposes Window.GetSnapshot() (including routeRows),
---      Window.ShowTab(route|dungeons|rewards|diag), Window.SelectCharacter(),
+--   4. Exposes Window.GetSnapshot() (including routeRows, professions, and
+--      stats), Window.ShowTab(route|dungeons|rewards|stats|diag),
+--      Window.RefreshStatsIfShown(), Window.SelectCharacter(),
 --      Window.SetMaxLevelOffset(), and programmatic setters for clean testing.
 --------------------------------------------------------------------------------
 
@@ -79,8 +83,11 @@ local frame = nil
 local activeTab = "route"
 local routeFilter = "remaining" -- "remaining" | "all" | "zone"
 local dungeonShowAll = false
-local rewardFilter = "all" -- "all" | "bags" | "gold" | "rogue" | "skinning_lw"
+local rewardFilter = "all" -- "all" | "bags" | "gold" | "rogue" | "skinning_lw" | "professions"
 local rewardShowAllLevels = false
+local statsViewMode = "levels" -- "levels" | "zones" | "milestones"
+local lastStatsAutoRefresh = 0
+local lastStatsListMode = nil
 
 local tabButtons = {}
 local tabPanels = {}
@@ -88,6 +95,9 @@ local presetButtons = {}
 local sliders = {}
 local toggleChecks = {}
 local wpChecks = {}
+local profPickerFrame = nil
+local profPickerAutoCheck = nil
+local profPickerChecks = {}
 
 local routeStaticSeq = 1
 local baseRouteCacheByOff = {}
@@ -165,6 +175,7 @@ local routeScratch = {
     ctxBlockOpts = nil,
     ctxBaseSlot = nil,
     ctxBaseCount = 0,
+    ctxProfMask = 0,
 }
 local tableClearFn = nil
 do
@@ -196,6 +207,7 @@ local ComputeRouteTabCache
 local dungeonTabCache = { key = nil, entries = {} }
 local rewardTabCache = { key = nil, items = {} }
 local diagTabCache = { key = nil, infoText = "", entries = {} }
+local statsTabCache = { key = nil, vm = nil }
 local ROUTE_BLOCK_OPTS = {
     consultQuestie = false,
     checkIsDoable = false,
@@ -520,15 +532,19 @@ function Window.GetSnapshot()
     local rewards = ns.Scorer.GetSpecialRewards(player, rewardFilter, 25, rewardShowAllLevels)
     local toggles = (ns.charDB and ns.charDB.toggles) or {}
     local rCache = ComputeRouteTabCache and ComputeRouteTabCache() or routeTabCache
+    local statsVm = (ns.Stats and ns.Stats.GetViewModel and ns.Stats.GetViewModel(statsViewMode, player)) or nil
 
     return {
         activeTab = activeTab,
         player = player,
+        professions = player and player.professions or nil,
         currentStep = currentStep,
         meta = meta,
         weights = weights,
         dungeons = dungeons,
         specialRewards = rewards,
+        stats = statsVm,
+        statsViewMode = statsViewMode,
         maxLevelOffset = ns.State.GetEffectiveMaxLevelOffset and ns.State.GetEffectiveMaxLevelOffset() or 2,
         blockedSteps = ns.State.GetBlockedSteps and ns.State.GetBlockedSteps() or {},
         readyTurnIns = ns.State.GetReadyTurnInQuests and ns.State.GetReadyTurnInQuests() or {},
@@ -664,6 +680,7 @@ local function BindRouteRow(row, item)
     local chTot = ch and ch.total or nil
     local chRemQ = ch and ch.remainingQuests or nil
     local chRemS = ch and ch.remainingSteps or nil
+    local profMask = routeScratch.ctxProfMask or 0
     if row._boundStep == st
         and row._boundIdx == item.idx
         and row._boundStatus == statusTag
@@ -671,7 +688,8 @@ local function BindRouteRow(row, item)
         and row._boundChainPos == chPos
         and row._boundChainTot == chTot
         and row._boundChainRemQ == chRemQ
-        and row._boundChainRemS == chRemS then
+        and row._boundChainRemS == chRemS
+        and row._boundProfMask == profMask then
         return
     end
     row._boundStep = st
@@ -682,6 +700,7 @@ local function BindRouteRow(row, item)
     row._boundChainTot = chTot
     row._boundChainRemQ = chRemQ
     row._boundChainRemS = chRemS
+    row._boundProfMask = profMask
 
     local numTag = item.idx and ("#" .. tostring(item.idx)) or "+"
     local chainTag = (ch and (ch.total or 0) >= 2) and string.format("|cff66e0ff[Chain %d/%d]|r ", ch.pos or 1, ch.total) or ""
@@ -698,6 +717,7 @@ local function BindRouteRow(row, item)
             routeMidParts[mCount] = "Final"
         end
     end
+    local qObj = (st.questId and routeScratch.ctxQuests) and routeScratch.ctxQuests[st.questId] or nil
     if b then
         if b.xp and b.xp > 0 then
             mCount = mCount + 1
@@ -707,7 +727,13 @@ local function BindRouteRow(row, item)
             mCount = mCount + 1
             routeMidParts[mCount] = b.bagSlots .. "Bag"
         end
-        if b.isLeatherworking then
+        local pBadge = ns.Professions and ns.Professions.FormatQuestBadge
+            and ns.Professions.FormatQuestBadge(qObj, b, routeScratch.ctxPlayer and routeScratch.ctxPlayer.professions, false)
+            or nil
+        if pBadge then
+            mCount = mCount + 1
+            routeMidParts[mCount] = pBadge
+        elseif b.isLeatherworking then
             mCount = mCount + 1
             routeMidParts[mCount] = "|cffb87333[LW]|r"
         elseif b.isSkinning or (b.skinningScore and b.skinningScore >= 30) then
@@ -717,6 +743,12 @@ local function BindRouteRow(row, item)
         if b.unlocksDungeon then
             mCount = mCount + 1
             routeMidParts[mCount] = "Unlock"
+        end
+    elseif qObj and ns.Professions and ns.Professions.FormatQuestBadge then
+        local pBadge = ns.Professions.FormatQuestBadge(qObj, nil, routeScratch.ctxPlayer and routeScratch.ctxPlayer.professions, false)
+        if pBadge then
+            mCount = mCount + 1
+            routeMidParts[mCount] = pBadge
         end
     end
     row.mid:SetText(table.concat(routeMidParts, " · ", 1, mCount))
@@ -886,9 +918,16 @@ local function BindRewardRow(row, rw)
         badges[#badges + 1] = string.format("|cfffff569%s BiS %d|r", rw.classLabel or "Class", math.floor(bis + 0.5))
     end
     if rw.goldCopper >= 4000 then badges[#badges + 1] = ns.FormatMoney(rw.goldCopper) end
-    if rw.isLeatherworking then badges[#badges + 1] = "|cffb87333[LW]|r" end
-    if rw.isSkinning or (rw.skinningScore and rw.skinningScore >= 30) then
-        badges[#badges + 1] = string.format("|cffd9a05b[Skin %d]|r", math.floor((rw.skinningScore or 0) + 0.5))
+    if rw.profBadge then
+        badges[#badges + 1] = rw.profBadge
+        if type(rw.profRewards) == "table" and rw.profRewards[1] and rw.profRewards[1].name then
+            badges[#badges + 1] = "|cffaad4ff" .. rw.profRewards[1].name .. "|r"
+        end
+    else
+        if rw.isLeatherworking then badges[#badges + 1] = "|cffb87333[LW]|r" end
+        if rw.isSkinning or (rw.skinningScore and rw.skinningScore >= 30) then
+            badges[#badges + 1] = string.format("|cffd9a05b[Skin %d]|r", math.floor((rw.skinningScore or 0) + 0.5))
+        end
     end
     local stLabel = (rw.status == "ready" and "|cff33ffcc[TurnIn]|r")
         or (rw.status == "active" and "|cffc080ff[In Log]|r")
@@ -985,6 +1024,39 @@ local function BindDiagRow(row, item)
                 row.hl:Hide()
             end
         end
+    end
+end
+
+local function CreateStatsRow(child, rowW, rowH)
+    local row = CreateFrame("Frame", nil, child, "BackdropTemplate")
+    row:SetHeight((rowH or 42) - 2)
+    ApplyBackdrop(row, 0.08, 0.09, 0.13, 0.86, 0.18, 0.22, 0.28, 0.9)
+
+    row.top = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.top:SetPoint("TOPLEFT", 8, -4)
+    row.top:SetWidth(rowW - 16)
+    row.top:SetJustifyH("LEFT")
+    if row.top.SetWordWrap then row.top:SetWordWrap(false) end
+
+    row.bot = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    row.bot:SetPoint("TOPLEFT", row.top, "BOTTOMLEFT", 0, -3)
+    row.bot:SetWidth(rowW - 16)
+    row.bot:SetJustifyH("LEFT")
+    if row.bot.SetWordWrap then row.bot:SetWordWrap(false) end
+
+    return row
+end
+
+local function BindStatsRow(row, item)
+    local tTxt = item and item.top or ""
+    local bTxt = item and item.bot or ""
+    if row._topText ~= tTxt then
+        row._topText = tTxt
+        row.top:SetText(tTxt)
+    end
+    if row._botText ~= bTxt then
+        row._botText = bTxt
+        row.bot:SetText(bTxt)
     end
 end
 
@@ -1752,8 +1824,14 @@ ComputeRouteTabCache = function(playerHint)
     local cursorIdx = tonumber(meta and meta.stepIndex) or tonumber(ns.charDB and ns.charDB.stepIndex) or 1
     local skipEliteNow = (ns.State.ShouldSkipEliteNow and ns.State.ShouldSkipEliteNow(player, t)) or (t.skipEliteSolo ~= false and not (player and player.inGroup))
     routeScratch.ctxSkipDungeonsNow = (ns.State.ShouldSkipDungeonsNow and ns.State.ShouldSkipDungeonsNow(t)) or (t.skipDungeons ~= false)
+    local profMask = tonumber(player.profMask) or 0
+    local profRankSig = tonumber(player.profRankSig) or 0
+    local prioProf = (ns.Professions and ns.Professions.IsPrioritizeEnabled) and ns.Professions.IsPrioritizeEnabled(t) or (t.prioritizeSkinningLW ~= false)
+    routeScratch.ctxProfMask = profMask
+    routeScratch.ctxPlayer = player
+    routeScratch.ctxQuests = (ns.GetData and ns.GetData() and ns.GetData().quests) or nil
     local baseZoneKey = (routeFilter == "zone" or routeReadyCount > 0) and tostring(player.zoneId or 0) or "any"
-    local baseKey = string.format("%d:%s:%s:%s:%s:%s:%s:%d:%s:%d:%d:%s:%d:%d:%s:%s",
+    local baseKey = string.format("%d:%s:%s:%s:%s:%s:%s:%d:%s:%d:%d:%s:%d:%d:%s:%s:%d:%d:%s",
         routeStaticSeq,
         tostring(activeKey),
         tostring(isDynamic),
@@ -1769,7 +1847,10 @@ ComputeRouteTabCache = function(playerHint)
         cursorIdx,
         dbQuestGen,
         tostring(skipEliteNow),
-        tostring(routeScratch.ctxSkipDungeonsNow))
+        tostring(routeScratch.ctxSkipDungeonsNow),
+        profMask,
+        profRankSig,
+        tostring(prioProf))
     local cacheKey = string.format("%s:%d:%s:%s:%s",
         baseKey,
         questGen,
@@ -2497,6 +2578,97 @@ ComputeRouteTabCache = function(playerHint)
     return routeTabCache
 end
 
+local function RefreshProfPicker(prof, toggles)
+    if not profPickerFrame then return end
+    prof = prof or (ns.State and ns.State.DetectProfessions and ns.State.DetectProfessions()) or {}
+    toggles = toggles or (ns.charDB and ns.charDB.toggles) or {}
+    if profPickerAutoCheck then
+        profPickerAutoCheck:SetChecked(toggles.autoDetectProfessions ~= false)
+    end
+    local ordered = ns.Professions and ns.Professions.GetOrdered and ns.Professions.GetOrdered() or {}
+    for i = 1, #ordered do
+        local pInfo = ordered[i]
+        local cb = profPickerChecks[pInfo.id]
+        if cb then
+            local hasP = ns.Professions.HasProfession(prof, pInfo.id)
+            local rk = ns.Professions.GetKnownRank(prof, pInfo.id)
+            cb:SetChecked(hasP)
+            local lbl = (rk and rk > 0)
+                and string.format("%s%s|r |cffaaaaaa(%d)|r", pInfo.color, pInfo.name, rk)
+                or string.format("%s%s|r", pInfo.color, pInfo.name)
+            cb:SetLabel(lbl)
+        end
+    end
+end
+
+local function EnsureProfPicker()
+    if profPickerFrame then
+        return profPickerFrame
+    end
+    local pf = CreateFrame("Frame", "ForeverQuestPathProfPicker", frame, "BackdropTemplate")
+    pf:SetSize(368, 224)
+    pf:SetFrameStrata("TOOLTIP")
+    pf:SetFrameLevel(((frame and frame:GetFrameLevel()) or 10) + 20)
+    if tabPanels.route and tabPanels.route.profBtn then
+        pf:SetPoint("TOPLEFT", tabPanels.route.profBtn, "BOTTOMLEFT", 0, -4)
+    else
+        pf:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    end
+    ApplyBackdrop(pf, 0.06, 0.08, 0.11, 0.98, 0.25, 0.72, 0.90, 1)
+    if pf.EnableMouse then pf:EnableMouse(true) end
+
+    local hdr = pf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    hdr:SetPoint("TOPLEFT", 12, -8)
+    hdr:SetText("|cff33d9ffSelect Professions to Prioritize (Primary & Secondary)|r")
+
+    profPickerAutoCheck = MakeCheckbox(pf, "Auto-Detect Learned Professions", 240, function(v)
+        if ns.Professions and ns.Professions.SetAutoDetect then
+            ns.Professions.SetAutoDetect(v)
+        end
+    end)
+    profPickerAutoCheck:SetPoint("TOPLEFT", 12, -26)
+
+    local ordered = ns.Professions and ns.Professions.GetOrdered and ns.Professions.GetOrdered() or {}
+    for i = 1, #ordered do
+        local pInfo = ordered[i]
+        local col = (i - 1) % 2
+        local rowIdx = math.floor((i - 1) / 2)
+        local cb = MakeCheckbox(pf, pInfo.color .. pInfo.name .. "|r", 168, function(v)
+            if ns.Professions and ns.Professions.SetProfession then
+                ns.Professions.SetProfession(pInfo.id, v)
+            end
+        end)
+        cb:SetPoint("TOPLEFT", 12 + col * 176, -52 - rowIdx * 22)
+        profPickerChecks[pInfo.id] = cb
+    end
+
+    local clearBtn = MakeButton(pf, "Clear All", 76, 20)
+    clearBtn:SetPoint("BOTTOMLEFT", 12, 8)
+    clearBtn:SetScript("OnClick", function()
+        if ns.Professions and ns.Professions.ClearManual then
+            ns.Professions.ClearManual()
+        end
+    end)
+
+    local autoBtn = MakeButton(pf, "Use Learned", 92, 20)
+    autoBtn:SetPoint("LEFT", clearBtn, "RIGHT", 6, 0)
+    autoBtn:SetScript("OnClick", function()
+        if ns.Professions and ns.Professions.SetAutoDetect then
+            ns.Professions.SetAutoDetect(true)
+        end
+    end)
+
+    local doneBtn = MakeButton(pf, "Done", 64, 20)
+    doneBtn:SetPoint("BOTTOMRIGHT", -12, 8)
+    doneBtn:SetScript("OnClick", function()
+        pf:Hide()
+    end)
+
+    pf:Hide()
+    profPickerFrame = pf
+    return pf
+end
+
 local function RefreshRouteTab(playerHint)
     local p = tabPanels.route
     if not p then return end
@@ -2538,11 +2710,29 @@ local function RefreshRouteTab(playerHint)
     if wpChecks.skipEliteSolo then wpChecks.skipEliteSolo:SetChecked(t.skipEliteSolo ~= false) end
     if toggleChecks.skipDungeons then toggleChecks.skipDungeons:SetChecked(t.skipDungeons ~= false) end
     if wpChecks.skipDungeons then wpChecks.skipDungeons:SetChecked(t.skipDungeons ~= false) end
-    if toggleChecks.skinning then toggleChecks.skinning:SetChecked(prof.hasSkinning == true) end
-    if toggleChecks.lw then toggleChecks.lw:SetChecked(prof.hasLeatherworking == true) end
-    if toggleChecks.prioritizeProf then toggleChecks.prioritizeProf:SetChecked(t.prioritizeSkinningLW ~= false) end
+    local prioProfOn = (ns.Professions and ns.Professions.IsPrioritizeEnabled and ns.Professions.IsPrioritizeEnabled(t))
+        or (t.prioritizeProfessions ~= false and t.prioritizeSkinningLW ~= false)
+    if toggleChecks.prioritizeProf then toggleChecks.prioritizeProf:SetChecked(prioProfOn) end
     if toggleChecks.autoDetectProf then toggleChecks.autoDetectProf:SetChecked(t.autoDetectProfessions ~= false) end
     if toggleChecks.gps then toggleChecks.gps:SetChecked(t.locationReorder ~= false) end
+
+    if p.profBtn then
+        local modePrefix = (t.autoDetectProfessions ~= false) and "Profs (Auto): " or "Profs: "
+        local activeCnt = tonumber(prof.activeCount) or 0
+        local shortList = prof.summaryShort or "None"
+        if activeCnt > 3 or #shortList > 22 then
+            shortList = string.format("%d selected", activeCnt)
+        end
+        local pTxt = modePrefix .. shortList
+        if p.profBtn.label and p.profBtn._lastText ~= pTxt then
+            p.profBtn._lastText = pTxt
+            p.profBtn.label:SetText(pTxt)
+        end
+        p.profBtn:SetSelected(prioProfOn and activeCnt > 0)
+    end
+    if profPickerFrame and profPickerFrame:IsShown() then
+        RefreshProfPicker(prof, t)
+    end
 
     if p.raceBtn and p.raceBtn.label then
         local rTxt = "Race: " .. (player.raceName or "Gnome")
@@ -2600,6 +2790,9 @@ local function RefreshDungeonsTab()
     end
     if p.rSkinBtn then
         p.rSkinBtn:SetSelected(rewardFilter == "skinning_lw")
+    end
+    if p.rProfBtn then
+        p.rProfBtn:SetSelected(rewardFilter == "professions")
     end
     p.rLevelBtn:SetSelected(rewardShowAllLevels)
 
@@ -2703,13 +2896,15 @@ local function RefreshDungeonsTab()
     p.dungeonList:SetItems(dungeonTabCache.entries, true)
 
     -- Right list: Special Rewards
-    local rKey = string.format("%d:%d:%s:%s:%s:%s:%s:%d:%s",
+    local rKey = string.format("%d:%d:%s:%s:%s:%s:%d:%d:%s:%d:%s",
         gen,
         player.level or 24,
         tostring(rewardFilter),
         tostring(rewardShowAllLevels == true),
         tostring(player.hasSkinning == true),
         tostring(player.hasLeatherworking == true),
+        tonumber(player.profMask) or 0,
+        tonumber(player.profRankSig) or 0,
         tostring(player.faction or "Alliance"),
         tonumber(player.raceId) or 0,
         tostring(player.classFile or "ROGUE"))
@@ -2760,15 +2955,16 @@ local function RefreshDiagTab()
     local locSig = ns.State.GetLocationPlanSignature and ns.State.GetLocationPlanSignature() or ""
     local qx = player.x and math.floor(player.x * 0.5) or -1
     local qy = player.y and math.floor(player.y * 0.5) or -1
-    local diagKey = string.format("%d:%d:%s:%s:%s:%d:%s:%s:%s:%d:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d",
+    local diagKey = string.format("%d:%d:%s:%s:%s:%d:%d:%d:%s:%s:%d:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d",
         gen,
         player.level or 24,
         tostring(player.zoneId or 0),
         WeightSig(w),
         tostring(toggles.consultQuestie ~= false),
         maxOffset,
-        tostring(toggles.hasSkinning == true),
-        tostring(toggles.hasLeatherworking == true),
+        tonumber(player.profMask) or 0,
+        tonumber(player.profRankSig) or 0,
+        tostring(ns.Professions and ns.Professions.IsPrioritizeEnabled(toggles)),
         tostring(player.faction or "Alliance"),
         tonumber(player.raceId) or 0,
         tostring(player.classFile or "ROGUE"),
@@ -2788,8 +2984,8 @@ local function RefreshDiagTab()
         integrations[#integrations + 1] = "TomTom:" .. (TomTom and "|cff33ff99Yes|r" or "|cff888888No|r")
         integrations[#integrations + 1] = "OpenMap:" .. (OpenMapAPI and "|cff33ff99Yes|r" or "|cff888888No|r")
         integrations[#integrations + 1] = "Questie:" .. ((QuestieLoader or QuestieDB) and "|cff33ff99Yes|r" or "|cff888888No|r")
-        integrations[#integrations + 1] = "Skin:" .. (player.hasSkinning and (player.skinningRank and tostring(player.skinningRank) or "|cff33ff99Yes|r") or "|cff888888No|r")
-        integrations[#integrations + 1] = "LW:" .. (player.hasLeatherworking and (player.leatherworkingRank and tostring(player.leatherworkingRank) or "|cff33ff99Yes|r") or "|cff888888No|r")
+        local pShort = player.professions and player.professions.summaryShort or "None"
+        integrations[#integrations + 1] = "Profs:" .. ((pShort ~= "None") and ("|cff33ff99" .. pShort .. "|r") or "|cff888888None|r")
         integrations[#integrations + 1] = "GPS:" .. ((toggles.locationReorder ~= false) and "|cff33ff99On|r" or "|cff888888Off|r")
         integrations[#integrations + 1] = "Elite:" .. ((player.inGroup == true) and "|cff33ff99Group|r" or ((toggles.skipEliteSolo ~= false) and "|cffffd200SkipSolo|r" or "|cff888888All|r"))
         integrations[#integrations + 1] = "Dung:" .. ((toggles.skipDungeons ~= false) and "|cffffd200Skip|r" or "|cff33ff99All|r")
@@ -2859,6 +3055,54 @@ local function RefreshDiagTab()
     p.diagList:SetItems(diagTabCache.entries, true)
 end
 
+local function RefreshStatsTab(force, playerHint)
+    local p = tabPanels.stats
+    if not p then return end
+
+    p.levelsBtn:SetSelected(statsViewMode == "levels")
+    p.zonesBtn:SetSelected(statsViewMode == "zones")
+    p.milestonesBtn:SetSelected(statsViewMode == "milestones")
+
+    if not (ns.Stats and ns.Stats.GetViewModel) then
+        return
+    end
+    local vm = ns.Stats.GetViewModel(statsViewMode, playerHint)
+    if not vm then return end
+
+    statsTabCache.vm = vm
+    lastStatsAutoRefresh = (GetTime and GetTime()) or lastStatsAutoRefresh
+
+    if p._lastPace ~= vm.paceSummary then
+        p._lastPace = vm.paceSummary
+        p.paceText:SetText(vm.paceSummary or "")
+    end
+    if p._lastTravel ~= vm.travelSummary then
+        p._lastTravel = vm.travelSummary
+        p.travelText:SetText(vm.travelSummary or "")
+    end
+    if p._lastEcon ~= vm.questEconSummary then
+        p._lastEcon = vm.questEconSummary
+        p.econText:SetText(vm.questEconSummary or "")
+    end
+
+    local modeChanged = (lastStatsListMode ~= statsViewMode)
+    lastStatsListMode = statsViewMode
+    p.list:SetItems(vm.rows or {}, force == true or modeChanged)
+end
+
+function Window.RefreshStatsIfShown(force)
+    if not frame or not frame:IsShown() or activeTab ~= "stats" then
+        return
+    end
+    if not force and GetTime then
+        local now = GetTime() or 0
+        if (now - lastStatsAutoRefresh) < 3.0 then
+            return
+        end
+    end
+    RefreshStatsTab(false)
+end
+
 function Window.Refresh(playerHint)
     if not frame or not frame:IsShown() then return end
 
@@ -2876,6 +3120,9 @@ function Window.Refresh(playerHint)
     end
 
     local panelKey = (activeTab == "rewards") and "dungeons" or activeTab
+    if profPickerFrame and panelKey ~= "route" and profPickerFrame:IsShown() then
+        profPickerFrame:Hide()
+    end
     for key, btn in pairs(tabButtons) do
         btn:SetSelected(key == panelKey)
     end
@@ -2890,13 +3137,15 @@ function Window.Refresh(playerHint)
         RefreshRouteTab(player)
     elseif panelKey == "dungeons" then
         RefreshDungeonsTab()
+    elseif panelKey == "stats" then
+        RefreshStatsTab(false, player)
     elseif panelKey == "diag" then
         RefreshDiagTab()
     end
 end
 
 function Window.ShowTab(tabKey)
-    if tabKey == "route" or tabKey == "dungeons" or tabKey == "rewards" or tabKey == "diag" then
+    if tabKey == "route" or tabKey == "dungeons" or tabKey == "rewards" or tabKey == "stats" or tabKey == "diag" then
         activeTab = tabKey
     end
     Window.SetShown(true)
@@ -2959,20 +3208,24 @@ local function CreateWindowFrame()
 
     local closeBtn = MakeButton(titleBar, "X", 22, 20)
     closeBtn:SetPoint("RIGHT", -6, 0)
-    closeBtn:SetScript("OnClick", function() frame:Hide() end)
+    closeBtn:SetScript("OnClick", function()
+        if profPickerFrame then profPickerFrame:Hide() end
+        frame:Hide()
+    end)
 
     frame.charText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     frame.charText:SetPoint("RIGHT", closeBtn, "LEFT", -12, 0)
 
-    -- Tabs
+    -- Tabs (4 tabs across 736px)
     local tabDefs = {
         { key = "route",    label = "Route & Balance" },
-        { key = "dungeons", label = "Dungeon Unlocks & Rewards" },
+        { key = "dungeons", label = "Dungeons & Rewards" },
+        { key = "stats",    label = "Journey Stats" },
         { key = "diag",     label = "Settings & Scorer" },
     }
     for i, td in ipairs(tabDefs) do
-        local tb = MakeButton(frame, td.label, 175, TAB_H)
-        tb:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + (i - 1) * 180, -(HEADER_H + 8))
+        local tb = MakeButton(frame, td.label, 178, TAB_H)
+        tb:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + (i - 1) * 186, -(HEADER_H + 8))
         tb:SetScript("OnClick", function()
             activeTab = td.key
             Window.Refresh()
@@ -3050,7 +3303,7 @@ local function CreateWindowFrame()
     sliders.travel   = MakeSlider(balBox, "Travel Penalty", sw, 0, 100, 5, PushSliderWeights)
     sliders.dungeon  = MakeSlider(balBox, "Dungeons", sw, 0, 100, 5, PushSliderWeights)
     sliders.reward   = MakeSlider(balBox, "Gold/Bags/BiS", sw, 0, 100, 5, PushSliderWeights)
-    sliders.skinning = MakeSlider(balBox, "Skinning / LW", sw, 0, 100, 5, PushSliderWeights)
+    sliders.skinning = MakeSlider(balBox, "Professions", sw, 0, 100, 5, PushSliderWeights)
     sliders.maxLevel = MakeSlider(balBox, "Max Quest Lv", 130, -3, 5, 1, function(val)
         if ns.State and ns.State.SetMaxLevelOffset then
             ns.State.SetMaxLevelOffset(val)
@@ -3097,15 +3350,38 @@ local function CreateWindowFrame()
     toggleChecks.auto:SetPoint("TOPLEFT", 506, -48)
     toggleChecks.elite:SetPoint("TOPLEFT", 620, -48)
 
-    toggleChecks.skinning       = MakeCheckbox(balBox, "Have Skinning", 104, ToggleProfOpt("hasSkinning"))
-    toggleChecks.lw             = MakeCheckbox(balBox, "Have Leatherworking", 136, ToggleProfOpt("hasLeatherworking"))
-    toggleChecks.prioritizeProf = MakeCheckbox(balBox, "Prioritize Skin/LW", 122, ToggleOpt("prioritizeSkinningLW"))
-    toggleChecks.autoDetectProf = MakeCheckbox(balBox, "Auto-Detect Profs", 120, ToggleOpt("autoDetectProfessions"))
+    pRoute.profBtn = MakeButton(balBox, "Profs: Auto (None)", 236, 20)
+    pRoute.profBtn:SetPoint("TOPLEFT", 10, -70)
+    pRoute.profBtn:SetScript("OnClick", function()
+        local pf = EnsureProfPicker()
+        if pf:IsShown() then
+            pf:Hide()
+        else
+            RefreshProfPicker()
+            pf:Show()
+        end
+    end)
+
+    toggleChecks.prioritizeProf = MakeCheckbox(balBox, "Prioritize Profs", 122, function(val)
+        if ns.Professions and ns.Professions.SetPrioritize then
+            ns.Professions.SetPrioritize(val)
+        else
+            ns.charDB.toggles.prioritizeProfessions = val
+            ns.charDB.toggles.prioritizeSkinningLW = val
+            ns.State.Refresh("TOGGLE_prioritizeSkinningLW")
+        end
+    end)
+    toggleChecks.autoDetectProf = MakeCheckbox(balBox, "Auto-Detect Profs", 120, function(val)
+        if ns.Professions and ns.Professions.SetAutoDetect then
+            ns.Professions.SetAutoDetect(val)
+        else
+            ns.charDB.toggles.autoDetectProfessions = val
+            ns.State.Refresh("TOGGLE_autoDetectProfessions")
+        end
+    end)
     toggleChecks.gps            = MakeCheckbox(balBox, "Auto-Reorder (GPS)", 126, ToggleOpt("locationReorder"))
     toggleChecks.skipDungeons   = MakeCheckbox(balBox, "Skip Dungeons", 106, ToggleOpt("skipDungeons"))
 
-    toggleChecks.skinning:SetPoint("TOPLEFT", 10, -70)
-    toggleChecks.lw:SetPoint("TOPLEFT", 116, -70)
     toggleChecks.prioritizeProf:SetPoint("TOPLEFT", 254, -70)
     toggleChecks.autoDetectProf:SetPoint("TOPLEFT", 378, -70)
     toggleChecks.gps:SetPoint("TOPLEFT", 500, -70)
@@ -3174,7 +3450,7 @@ local function CreateWindowFrame()
         ns.State.ClearCharacterOverride()
     end)
 
-    pRoute.list = MakeScrollList(pRoute, WIN_W - 2 * PAD, 274, 26, 15, CreateRouteRow, BindRouteRow)
+    pRoute.list = MakeScrollList(pRoute, WIN_W - 2 * PAD, 274, 26, 11, CreateRouteRow, BindRouteRow)
     pRoute.list:SetPoint("TOPLEFT", balBox, "BOTTOMLEFT", 0, -8)
 
     ------------------------------------------------------------------ Tab 2: Dungeons & Rewards
@@ -3193,35 +3469,103 @@ local function CreateWindowFrame()
     pDun.nearBtn:SetScript("OnClick", function() dungeonShowAll = false RefreshDungeonsTab() end)
     pDun.allBtn:SetScript("OnClick", function() dungeonShowAll = true RefreshDungeonsTab() end)
 
-    pDun.dungeonList = MakeScrollList(pDun, leftW, 430, 22, 22, CreateDungeonRow, BindDungeonRow)
+    pDun.dungeonList = MakeScrollList(pDun, leftW, 430, 22, 20, CreateDungeonRow, BindDungeonRow)
     pDun.dungeonList:SetPoint("TOPLEFT", 0, -26)
 
-    pDun.rAllBtn   = MakeButton(pDun, "All", 32, 20)
-    pDun.rBagBtn   = MakeButton(pDun, "Bags", 42, 20)
-    pDun.rGoldBtn  = MakeButton(pDun, "Gold", 42, 20)
-    pDun.rRogueBtn = MakeButton(pDun, "Class BiS", 76, 20)
-    pDun.rSkinBtn  = MakeButton(pDun, "Skin/LW", 60, 20)
-    pDun.rLevelBtn = MakeButton(pDun, "All Lvl", 54, 20)
+    pDun.rAllBtn   = MakeButton(pDun, "All", 28, 20)
+    pDun.rBagBtn   = MakeButton(pDun, "Bags", 38, 20)
+    pDun.rGoldBtn  = MakeButton(pDun, "Gold", 38, 20)
+    pDun.rRogueBtn = MakeButton(pDun, "Class BiS", 68, 20)
+    pDun.rSkinBtn  = MakeButton(pDun, "Skin/LW", 52, 20)
+    pDun.rProfBtn  = MakeButton(pDun, "Profs", 44, 20)
+    pDun.rLevelBtn = MakeButton(pDun, "All Lvl", 48, 20)
 
     local rx0 = leftW + 10
     pDun.rAllBtn:SetPoint("TOPLEFT", rx0, 0)
-    pDun.rBagBtn:SetPoint("LEFT", pDun.rAllBtn, "RIGHT", 4, 0)
-    pDun.rGoldBtn:SetPoint("LEFT", pDun.rBagBtn, "RIGHT", 4, 0)
-    pDun.rRogueBtn:SetPoint("LEFT", pDun.rGoldBtn, "RIGHT", 4, 0)
-    pDun.rSkinBtn:SetPoint("LEFT", pDun.rRogueBtn, "RIGHT", 4, 0)
-    pDun.rLevelBtn:SetPoint("LEFT", pDun.rSkinBtn, "RIGHT", 4, 0)
+    pDun.rBagBtn:SetPoint("LEFT", pDun.rAllBtn, "RIGHT", 3, 0)
+    pDun.rGoldBtn:SetPoint("LEFT", pDun.rBagBtn, "RIGHT", 3, 0)
+    pDun.rRogueBtn:SetPoint("LEFT", pDun.rGoldBtn, "RIGHT", 3, 0)
+    pDun.rSkinBtn:SetPoint("LEFT", pDun.rRogueBtn, "RIGHT", 3, 0)
+    pDun.rProfBtn:SetPoint("LEFT", pDun.rSkinBtn, "RIGHT", 3, 0)
+    pDun.rLevelBtn:SetPoint("LEFT", pDun.rProfBtn, "RIGHT", 3, 0)
 
     pDun.rAllBtn:SetScript("OnClick", function() rewardFilter = "all" RefreshDungeonsTab() end)
     pDun.rBagBtn:SetScript("OnClick", function() rewardFilter = "bags" RefreshDungeonsTab() end)
     pDun.rGoldBtn:SetScript("OnClick", function() rewardFilter = "gold" RefreshDungeonsTab() end)
     pDun.rRogueBtn:SetScript("OnClick", function() rewardFilter = "rogue" RefreshDungeonsTab() end)
     pDun.rSkinBtn:SetScript("OnClick", function() rewardFilter = "skinning_lw" RefreshDungeonsTab() end)
+    pDun.rProfBtn:SetScript("OnClick", function() rewardFilter = "professions" RefreshDungeonsTab() end)
     pDun.rLevelBtn:SetScript("OnClick", function() rewardShowAllLevels = not rewardShowAllLevels RefreshDungeonsTab() end)
 
-    pDun.rewardList = MakeScrollList(pDun, rightW, 430, 36, 14, CreateRewardRow, BindRewardRow)
+    pDun.rewardList = MakeScrollList(pDun, rightW, 430, 36, 12, CreateRewardRow, BindRewardRow)
     pDun.rewardList:SetPoint("TOPLEFT", rx0, -26)
 
-    ------------------------------------------------------------------ Tab 3: Settings & Diag
+    ------------------------------------------------------------------ Tab 3: Journey Stats
+    local pStats = CreateFrame("Frame", nil, frame)
+    pStats:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, bodyTop)
+    pStats:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD, PAD)
+    tabPanels.stats = pStats
+
+    pStats.levelsBtn = MakeButton(pStats, "Per-Level", 86, 20)
+    pStats.zonesBtn = MakeButton(pStats, "By Zone", 82, 20)
+    pStats.milestonesBtn = MakeButton(pStats, "Milestones", 90, 20)
+    pStats.levelsBtn:SetPoint("TOPLEFT", 0, 0)
+    pStats.zonesBtn:SetPoint("LEFT", pStats.levelsBtn, "RIGHT", 6, 0)
+    pStats.milestonesBtn:SetPoint("LEFT", pStats.zonesBtn, "RIGHT", 6, 0)
+    pStats.levelsBtn:SetScript("OnClick", function() statsViewMode = "levels" RefreshStatsTab(true) end)
+    pStats.zonesBtn:SetScript("OnClick", function() statsViewMode = "zones" RefreshStatsTab(true) end)
+    pStats.milestonesBtn:SetScript("OnClick", function() statsViewMode = "milestones" RefreshStatsTab(true) end)
+
+    pStats.resetBtn = MakeButton(pStats, "Reset Session", 104, 20)
+    pStats.resetBtn:SetPoint("TOPRIGHT", 0, 0)
+    pStats.resetBtn:SetScript("OnClick", function()
+        if not ns.Stats then return end
+        if IsShiftKeyDown and IsShiftKeyDown() then
+            ns.Stats.ResetAll()
+            ns.Print("All leveling journey stats reset.")
+        else
+            ns.Stats.ResetSession()
+            ns.Print("Current session journey stats reset.")
+        end
+        RefreshStatsTab(true)
+    end)
+
+    pStats.playedBtn = MakeButton(pStats, "Sync /played", 96, 20)
+    pStats.playedBtn:SetPoint("RIGHT", pStats.resetBtn, "LEFT", -6, 0)
+    pStats.playedBtn:SetScript("OnClick", function()
+        if ns.Stats and ns.Stats.RequestTimePlayedSync then
+            ns.Stats.RequestTimePlayedSync()
+        end
+        RefreshStatsTab(true)
+    end)
+
+    local sumBg = pStats:CreateTexture(nil, "BACKGROUND")
+    sumBg:SetPoint("TOPLEFT", 0, -26)
+    sumBg:SetPoint("TOPRIGHT", 0, -26)
+    sumBg:SetHeight(152)
+    if sumBg.SetColorTexture then
+        sumBg:SetColorTexture(0.08, 0.10, 0.14, 0.92)
+    end
+
+    pStats.paceText = pStats:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    pStats.paceText:SetPoint("TOPLEFT", 10, -34)
+    pStats.paceText:SetPoint("TOPRIGHT", -10, -34)
+    pStats.paceText:SetJustifyH("LEFT")
+
+    pStats.travelText = pStats:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    pStats.travelText:SetPoint("TOPLEFT", 10, -82)
+    pStats.travelText:SetPoint("TOPRIGHT", -10, -82)
+    pStats.travelText:SetJustifyH("LEFT")
+
+    pStats.econText = pStats:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    pStats.econText:SetPoint("TOPLEFT", 10, -130)
+    pStats.econText:SetPoint("TOPRIGHT", -10, -130)
+    pStats.econText:SetJustifyH("LEFT")
+
+    pStats.list = MakeScrollList(pStats, WIN_W - 2 * PAD, 260, 42, 7, CreateStatsRow, BindStatsRow)
+    pStats.list:SetPoint("TOPLEFT", 0, -184)
+
+    ------------------------------------------------------------------ Tab 4: Settings & Diag
     local pDiag = CreateFrame("Frame", nil, frame)
     pDiag:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, bodyTop)
     pDiag:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD, PAD)
@@ -3318,7 +3662,7 @@ local function CreateWindowFrame()
     diagTitle:SetPoint("TOPLEFT", pDiag.infoText, "BOTTOMLEFT", 0, -10)
     diagTitle:SetText("|cff99bbccGuard Log (Blocked Steps) & Live Re-Scorer Candidate Ranking|r")
 
-    pDiag.diagList = MakeScrollList(pDiag, WIN_W - 2 * PAD, 286, 26, 14, CreateDiagRow, BindDiagRow)
+    pDiag.diagList = MakeScrollList(pDiag, WIN_W - 2 * PAD, 286, 26, 11, CreateDiagRow, BindDiagRow)
     pDiag.diagList:SetPoint("TOPLEFT", diagTitle, "BOTTOMLEFT", 0, -6)
 
     frame:Hide()
@@ -3333,6 +3677,7 @@ function Window.SetShown(show)
             frame:Show()
             Window.Refresh()
         else
+            if profPickerFrame then profPickerFrame:Hide() end
             frame:Hide()
         end
     end

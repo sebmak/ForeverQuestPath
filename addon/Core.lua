@@ -13,7 +13,9 @@
 --      GROUP_ROSTER_UPDATE / PARTY_MEMBERS_CHANGED / RAID_ROSTER_UPDATE group
 --      tracking (supporting solo elite skipping via toggles.skipEliteSolo,
 --      dungeon quest deferral via toggles.skipDungeons, automatic in-dungeon
---      quest routing when zoned inside a dungeon/raid instance, and
+--      quest routing when zoned inside a dungeon/raid instance, 12-profession
+--      selection & prioritization via ns.Professions (/fqp prof), leveling
+--      journey stats & /played tracking via ns.Stats (/fqp stats), and
 --      optimal-path unaccepted available quest discovery via State/Scorer),
 --      TAXIMAP_OPENED change-gated flight-master recording, /fqp gate toggle,
 --      /fqp elite toggle, /fqp skipdungeons (/fqp dungeons skip|allow|toggle),
@@ -36,7 +38,7 @@ end
 addonName = addonName or "ForeverQuestPath"
 
 ns.name = addonName
-ns.version = "1.6.2"
+ns.version = "1.7.0"
 ns.PREFIX = "|cff33d9ffForeverQuestPath|r: "
 ns.ICON_TEXTURE = "Interface\\AddOns\\ForeverQuestPath\\Media\\Icon"
 ns.ICON_ROUND_TEXTURE = "Interface\\AddOns\\ForeverQuestPath\\Media\\IconRound"
@@ -82,6 +84,7 @@ local DEFAULT_CHAR_DB = {
         hasSkinning = false,
         hasLeatherworking = false,
         prioritizeSkinningLW = true,
+        prioritizeProfessions = true,
         autoAdvance = true,
         locationReorder = true,
         dynamicRescore = false,
@@ -90,6 +93,8 @@ local DEFAULT_CHAR_DB = {
         skipEliteSolo = true,
         skipDungeons = true,
     },
+    selectedProfessions = {},
+    stats = {},
     overrideRace = nil,
     overrideClass = nil,
     overrideFaction = nil,
@@ -461,17 +466,29 @@ function ns.InitSavedVars()
     if type(ns.charDB.deferredSteps) ~= "table" then
         ns.charDB.deferredSteps = {}
     end
+    if type(ns.charDB.selectedProfessions) ~= "table" then
+        ns.charDB.selectedProfessions = {}
+    end
+    if type(ns.charDB.stats) ~= "table" then
+        ns.charDB.stats = {}
+    end
 end
 
 function ns.Bootstrap()
     if initialized then return end
     initialized = true
     ns.InitSavedVars()
+    if ns.Professions and ns.Professions.Initialize then
+        ns.Professions.Initialize()
+    end
     if ns.State and ns.State.Initialize then
         ns.State.Initialize()
     end
     if ns.Scorer and ns.Scorer.Initialize then
         ns.Scorer.Initialize()
+    end
+    if ns.Stats and ns.Stats.Initialize then
+        ns.Stats.Initialize()
     end
     if ns.Waypoint and ns.Waypoint.Initialize then
         ns.Waypoint.Initialize()
@@ -487,8 +504,16 @@ function ns.Bootstrap()
     end
     if (not locationTicker) and C_Timer and C_Timer.NewTicker then
         locationTicker = C_Timer.NewTicker(1.5, function()
-            if initialized and ns.State and ns.State.CheckLivePosition then
-                ns.State.CheckLivePosition(false)
+            if initialized then
+                if ns.Stats and ns.Stats.OnTickerTick then
+                    ns.Stats.OnTickerTick()
+                end
+                if ns.Window and ns.Window.RefreshStatsIfShown then
+                    ns.Window.RefreshStatsIfShown(false)
+                end
+                if ns.State and ns.State.CheckLivePosition then
+                    ns.State.CheckLivePosition(false)
+                end
             end
         end)
     end
@@ -858,6 +883,28 @@ function ns.HandleSlashCommand(rawMsg)
             end
             ns.Printf("Gate/transport intermediate waypoints %s.", (ns.db.navGateWaypoints ~= false) and "enabled" or "disabled")
         end
+    elseif cmd == "prof" or cmd == "profession" or cmd == "professions" then
+        if ns.Professions and ns.Professions.ApplySlashCommand then
+            ns.Professions.ApplySlashCommand(rest)
+        end
+    elseif cmd == "stats" or cmd == "stat" then
+        if ns.Stats then
+            if rest == "reset" or rest == "session" then
+                ns.Stats.ResetSession()
+                ns.Print("Current session journey stats reset.")
+            elseif rest == "all" or rest == "clear" then
+                ns.Stats.ResetAll()
+                ns.Print("All leveling journey stats reset.")
+            elseif rest == "played" or rest == "sync" then
+                ns.Stats.RequestTimePlayedSync()
+                ns.Stats.PrintChatSummary()
+            else
+                if ns.Window and ns.Window.ShowTab then
+                    ns.Window.ShowTab("stats")
+                end
+                ns.Stats.PrintChatSummary()
+            end
+        end
     elseif cmd == "elite" or cmd == "elites" or cmd == "group" then
         if ns.charDB and ns.charDB.toggles then
             local toggles = ns.charDB.toggles
@@ -878,7 +925,7 @@ function ns.HandleSlashCommand(rawMsg)
                 .. (inGroup and " (currently IN GROUP - elite quests included)" or " (currently SOLO)"))
         end
     else
-        ns.Print("Commands: /fqp (window), /fqp hud, /fqp pin, /fqp elite [on|off|toggle], /fqp skipdungeons [on|off|toggle], /fqp gate [on|off], /fqp gps [on|off|toggle|stats], /fqp skip, /fqp back, /fqp reset, /fqp dungeons [skip|allow|toggle], /fqp rewards, /fqp maxlevel <-3..+5>, /fqp char <auto|race class>, /fqp profile <balanced|skinning_lw|dungeon_focus|treasure_bags|fast_xp>")
+        ns.Print("Commands: /fqp (window), /fqp hud, /fqp pin, /fqp prof <auto|clear|on|off|names...>, /fqp stats [reset|all|played], /fqp elite [on|off|toggle], /fqp skipdungeons [on|off|toggle], /fqp gate [on|off], /fqp gps [on|off|toggle|stats], /fqp skip, /fqp back, /fqp reset, /fqp dungeons [skip|allow|toggle], /fqp rewards, /fqp maxlevel <-3..+5>, /fqp char <auto|race class>, /fqp profile <balanced|skinning_lw|dungeon_focus|treasure_bags|fast_xp>")
     end
 end
 
@@ -904,6 +951,9 @@ if CreateFrame then
         "QUEST_REMOVED",
         "QUEST_LOG_UPDATE",
         "PLAYER_LEVEL_UP",
+        "PLAYER_XP_UPDATE",
+        "PLAYER_MONEY",
+        "TIME_PLAYED_MSG",
         "ZONE_CHANGED_NEW_AREA",
         "ZONE_CHANGED",
         "ZONE_CHANGED_INDOORS",
@@ -921,7 +971,7 @@ if CreateFrame then
         pcall(eventFrame.RegisterEvent, eventFrame, ev)
     end
 
-    eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
+    eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if event == "ADDON_LOADED" then
             if arg1 == addonName then
                 ns.InitSavedVars()
@@ -940,12 +990,62 @@ if CreateFrame then
             ns.Printf("Loaded (%d quests indexed). Type /fqp for route & dungeon tracker.", pCount)
         elseif event == "PLAYER_ENTERING_WORLD" then
             ns.Bootstrap()
+            if ns.Stats and ns.Stats.OnEnteringWorld then
+                ns.Stats.OnEnteringWorld()
+            end
             ScheduleRefresh(event, true)
-        elseif event == "QUEST_TURNED_IN" or event == "QUEST_ACCEPTED" or event == "QUEST_REMOVED"
-            or event == "PLAYER_LEVEL_UP" then
+        elseif event == "QUEST_TURNED_IN" then
+            if initialized then
+                if ns.Stats and ns.Stats.OnQuestTurnedIn then
+                    ns.Stats.OnQuestTurnedIn(arg1, arg2, arg3)
+                end
+                if ns.State and ns.State.Refresh then
+                    ns.State.Refresh(event, arg1, arg2)
+                end
+            end
+        elseif event == "QUEST_ACCEPTED" then
+            if initialized then
+                if ns.Stats and ns.Stats.OnQuestAccepted then
+                    ns.Stats.OnQuestAccepted(arg1, arg2)
+                end
+                if ns.State and ns.State.Refresh then
+                    ns.State.Refresh(event, arg1, arg2)
+                end
+            end
+        elseif event == "PLAYER_LEVEL_UP" then
+            if initialized then
+                if ns.Stats and ns.Stats.OnLevelUp then
+                    ns.Stats.OnLevelUp(arg1)
+                end
+                if ns.State and ns.State.Refresh then
+                    ns.State.Refresh(event, arg1, arg2)
+                end
+            end
+        elseif event == "QUEST_REMOVED" then
             if initialized then
                 if ns.State and ns.State.Refresh then
                     ns.State.Refresh(event, arg1, arg2)
+                end
+            end
+        elseif event == "PLAYER_XP_UPDATE" then
+            if initialized and ns.Stats and ns.Stats.OnXpUpdate then
+                ns.Stats.OnXpUpdate()
+                if ns.Window and ns.Window.RefreshStatsIfShown then
+                    ns.Window.RefreshStatsIfShown(true)
+                end
+            end
+        elseif event == "PLAYER_MONEY" then
+            if initialized and ns.Stats and ns.Stats.OnMoneyChanged then
+                ns.Stats.OnMoneyChanged()
+                if ns.Window and ns.Window.RefreshStatsIfShown then
+                    ns.Window.RefreshStatsIfShown(true)
+                end
+            end
+        elseif event == "TIME_PLAYED_MSG" then
+            if initialized and ns.Stats and ns.Stats.OnTimePlayedMsg then
+                ns.Stats.OnTimePlayedMsg(arg1, arg2)
+                if ns.Window and ns.Window.RefreshStatsIfShown then
+                    ns.Window.RefreshStatsIfShown(true)
                 end
             end
         elseif event == "ZONE_CHANGED_NEW_AREA" then
@@ -980,6 +1080,12 @@ if CreateFrame then
             dirtyZone = false
             dirtyZoneReason = nil
             dirtyTaxi = false
+            if initialized and ns.Stats and ns.Stats.OnPlayerDead then
+                ns.Stats.OnPlayerDead()
+                if ns.Window and ns.Window.RefreshStatsIfShown then
+                    ns.Window.RefreshStatsIfShown(true)
+                end
+            end
             if initialized and ns.State and ns.State.OnPlayerDead then
                 ns.State.OnPlayerDead()
             end

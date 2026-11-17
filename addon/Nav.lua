@@ -14,9 +14,11 @@
 --      through mountains, cliffs, or oceans.
 --   4. Reverse eligible-quest index nodeToEligible is rebuilt strictly when
 --      questStateGeneration (or player level/maxlevel/faction/race/class/
---      profile/group, skipEliteSolo, or skipDungeons state) changes -- NEVER on 1.5s
+--      professions/profile/group, skipEliteSolo, or skipDungeons state) changes
+--      -- NEVER on 1.5s
 --      GPS_MOVED ticks or virtual lookahead steps with skipIndexRebuild=true --
 --      on top of zero-GC per-character minLevel buckets (staticLevelBuckets),
+--      registering dungeon/reward/class/profession priority quests in priorityQids,
 --      unlock / attunement quests while excluding solo-skipped open-world elite
 --      and deferred dungeon "s"/"o" quests while preserving ready turn-ins ("t"),
 --      cached nearest-quest pool (nearestCache + 32-slot zero-GC
@@ -215,6 +217,8 @@ local eligibleMeta = {
     classFile = "",
     profile = "",
     togglesMask = -1,
+    profMask = -1,
+    profRankSig = -1,
     count = 0,
 }
 local nearestCache = {
@@ -1474,7 +1478,9 @@ local function RegisterQuestToIndex(nav, questAnchors, qid, q, roleCode, classFi
     if q.dungeonId
         or (r and r.bagSlots and r.bagSlots > 0)
         or cb >= 50
-        or (classFile == "ROGUE" and rScore >= 50) then
+        or (classFile == "ROGUE" and rScore >= 50)
+        or (q.requiredSkill ~= nil)
+        or (q.profRewards ~= nil) then
         pCount = pCount + 1
         priorityQids[pCount] = qid
     end
@@ -1554,12 +1560,22 @@ function Nav.EnsureEligibleIndex(data, player)
     local toggles = (ns.charDB and ns.charDB.toggles) or {}
     local skipEliteNow = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(player, toggles) or (toggles.skipEliteSolo ~= false and not (player and player.inGroup))
     local skipDungeonsNow = (ns.State and ns.State.ShouldSkipDungeonsNow) and ns.State.ShouldSkipDungeonsNow(toggles) or (toggles.skipDungeons ~= false)
+    local prof = (player and player.professions) or (State and State.DetectProfessions and State.DetectProfessions()) or nil
+    local profMask, profRankSig = 0, 0
+    if ns.Professions and ns.Professions.GetProfSignatures then
+        profMask, profRankSig = ns.Professions.GetProfSignatures(prof)
+    elseif prof then
+        profMask = (prof.hasSkinning and 128 or 0) + (prof.hasLeatherworking and 32 or 0)
+        profRankSig = ((prof.skinningRank or -1) * 389 + (prof.leatherworkingRank or -1))
+    end
+    local prioProfBit = ((not ns.Professions or ns.Professions.IsPrioritizeEnabled(toggles)) and 64 or 0)
     local togglesMask = ((toggles.includeDungeons ~= false) and 1 or 0)
         + ((toggles.consultQuestie ~= false) and 2 or 0)
         + ((toggles.includeSkinning ~= false) and 4 or 0)
         + ((toggles.includeGoldBags ~= false) and 8 or 0)
         + (skipEliteNow and 16 or 0)
         + (skipDungeonsNow and 32 or 0)
+        + prioProfBit
 
     if eligibleMeta.valid
         and eligibleMeta.stateGen == stateGen
@@ -1572,7 +1588,9 @@ function Nav.EnsureEligibleIndex(data, player)
         and eligibleMeta.classBitmask == classBitmask
         and eligibleMeta.classFile == classFile
         and eligibleMeta.profile == profile
-        and eligibleMeta.togglesMask == togglesMask then
+        and eligibleMeta.togglesMask == togglesMask
+        and eligibleMeta.profMask == profMask
+        and eligibleMeta.profRankSig == profRankSig then
         return eligibleMeta.count
     end
 
@@ -1593,7 +1611,6 @@ function Nav.EnsureEligibleIndex(data, player)
     local completedCheck = State and State.IsQuestCompleted
     local fastNavBlocked = State and State.IsQuestBlockedForNav
     local blockCheck = State and State.GetQuestBlockReason
-    local prof = (player and player.professions) or (State and State.DetectProfessions and State.DetectProfessions()) or nil
     local activeMap = (State and State.GetActiveQuests and State.GetActiveQuests()) or {}
     local questAnchors = nav.questAnchors or {}
     local questsMap = data.quests
@@ -1668,6 +1685,8 @@ function Nav.EnsureEligibleIndex(data, player)
     eligibleMeta.classFile = classFile
     eligibleMeta.profile = profile
     eligibleMeta.togglesMask = togglesMask
+    eligibleMeta.profMask = profMask
+    eligibleMeta.profRankSig = profRankSig
     eligibleMeta.count = addedCount
     nearestCache.valid = false
     return addedCount

@@ -4,7 +4,8 @@
 -- AddLine/AddDoubleLine), GetQuestLogQuestText, Frame/Widget APIs, SavedVariables
 -- lifecycle, .toc loader, group/raid APIs (IsInGroup, IsInRaid, GetNumGroupMembers,
 -- GetNumPartyMembers, GetNumRaidMembers, Mock.SetGroup), instance APIs
--- (IsInInstance, GetInstanceInfo, Mock.SetInstance), and TomTom/OpenMap mocks.
+-- (IsInInstance, GetInstanceInfo, Mock.SetInstance), /played (RequestTimePlayed,
+-- TIME_PLAYED_MSG), XP/money helpers (Mock.GainXP, Mock.AddMoney), and TomTom/OpenMap mocks.
 
 local M = {}
 
@@ -155,6 +156,8 @@ M.state = {
         instanceMapId = nil,
         hearthCooldownStart = 0,
         hearthCooldownDuration = 0,
+        totalTimePlayed = 7200,
+        levelTimePlayed = 900,
     },
     tickers = {},
     taxiNodes = {},
@@ -658,6 +661,8 @@ function M.Reset(opts)
         instanceMapId = nil,
         hearthCooldownStart = 0,
         hearthCooldownDuration = 0,
+        totalTimePlayed = 7200,
+        levelTimePlayed = 900,
     }
     if opts.character then
         M.SetCharacter(opts.character)
@@ -787,6 +792,10 @@ function M.Reset(opts)
         return M.state.character.faction, M.state.character.faction
     end
     _G.GetMoney = function() return M.state.character.money end
+    _G.RequestTimePlayed = function()
+        local c = M.state.character
+        M.FireEvent("TIME_PLAYED_MSG", c.totalTimePlayed or 0, c.levelTimePlayed or 0)
+    end
     _G.GetRealZoneText = function()
         local c = M.state.character
         if c.inInstance == true and c.instanceName and c.instanceName ~= "" then
@@ -1525,7 +1534,39 @@ end
 function M.LevelUp(newLevel)
     M.state.character.level = newLevel
     M.state.character.xp = 0
+    M.state.character.xpMax = math.floor(400 * newLevel * (1 + newLevel * 0.08))
     M.FireEvent("PLAYER_LEVEL_UP", newLevel)
+end
+
+function M.GainXP(amount)
+    local rem = tonumber(amount) or 0
+    if rem <= 0 then return end
+    local c = M.state.character
+    while rem > 0 do
+        local curXp = tonumber(c.xp) or 0
+        local maxXp = math.max(1, tonumber(c.xpMax) or 1000)
+        local toLevel = math.max(1, maxXp - curXp)
+        if rem >= toLevel and (c.level or 1) < 60 then
+            c.xp = maxXp
+            M.FireEvent("PLAYER_XP_UPDATE", "player")
+            rem = rem - toLevel
+            c.level = (c.level or 1) + 1
+            c.xp = 0
+            c.xpMax = math.floor(400 * c.level * (1 + c.level * 0.08))
+            M.FireEvent("PLAYER_LEVEL_UP", c.level)
+        else
+            c.xp = curXp + rem
+            rem = 0
+            M.FireEvent("PLAYER_XP_UPDATE", "player")
+        end
+    end
+end
+
+function M.AddMoney(deltaCopper)
+    local dc = tonumber(deltaCopper) or 0
+    local c = M.state.character
+    c.money = math.max(0, (c.money or 0) + dc)
+    M.FireEvent("PLAYER_MONEY")
 end
 
 function M.ChangeZone(mapId, x, y)

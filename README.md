@@ -18,6 +18,8 @@
 - **Skip Elite Quests Unless Grouped:** Automatically defers open-world elite quests and their follow-ups while solo (`Skip Elite (Solo)` toggle or `/fqp elite`), unlocking them immediately when you join a party or raid while always keeping completed turn-ins active.
 - **Skip Dungeon Quests Until Ready:** Defers quests inside dungeon instances (`Skip Dungeons` toggle or `/fqp skipdungeons` / `/fqp dungeons skip|allow|toggle`) while keeping outdoor unlock quests and completed turn-ins active, and automatically rewinds to all deferred dungeon steps when you're ready to run them together.
 - **Automatic In-Dungeon Quest Routing:** When you zone inside any Classic or Forever custom dungeon instance, automatically surfaces that dungeon's ready in-dungeon turn-ins, available inside-dungeon pickups, active objectives, follow-up chains, post-run turn-ins, and shareable dungeon quests as your next steps—even while `Skip Dungeons` or `Skip Elite (Solo)` is enabled—and resumes normal open-world routing when you exit.
+- **Universal 12-Profession Selection & Prioritization:** Auto-detects learned professions or lets you manually prioritize any combination of all 12 WoW Forever primary and secondary professions (Alchemy, Blacksmithing, Enchanting, Engineering, Herbalism, Leatherworking, Mining, Skinning, Tailoring, Cooking, First Aid, Fishing) via the Route window picker, `Profs` Special Rewards filter, or `/fqp prof`.
+- **Leveling Journey Stats Page:** Dedicated `Journey Stats` tab (`/fqp stats`) tracking average time per level, live session and journey XP/hr, Quest XP vs Combat/Exploration XP split, ETA to next level and Level 60, ground distance traveled (yards / km / miles), per-level `1–60` breakdown, per-zone travel & quest stats, gold earned/spent/net & gold/hr, deaths & deathless streak, flights, hearthstones, dungeons visited, and `/played` sync.
 - **Quest Hover Instructions & Click-to-Open Quest Log:** Hovering over any quest in the HUD or Window tabs displays full quest instructions, narrative text, live objective progress, NPC coordinates, chain progress, and rewards; Left-Clicking opens the Quest Log to that quest (or pins its quest giver if unaccepted), while Right-Clicking pins the waypoint or jumps to the route step.
 - **Anti-Shuffling Route Stability:** Keeps lookahead steps anchored cleanly to your current continent and zone (expanding local frontiers when transitioning zones, simulating Hearthstone as single-use, enforcing cross-zone/cross-continent cohesion, and applying walking target/queue hysteresis) so upcoming steps don't flip across continents mid-travel.
 - **Low-CPU Event Gating:** Suppresses redundant routing recalculations while stationary, looting/skinning, or dead/ghost.
@@ -32,7 +34,7 @@ You can install and auto-update **ForeverQuestPath** for **WoW Forever (`Interfa
 2. Go to **Get Addons -> Install from URL**.
 3. Paste the GitHub repository URL:
    - https://github.com/sebmak/ForeverQuestPath
-4. Click **Import** and then **Install / Re-install** — WowUp reads `release.json`, `ForeverQuestPath-v1.6.2-forever.zip`, and `ForeverQuestPath_Forever.toc` automatically and replaces any `Unknown` manual local folder (which otherwise shows an `"F"` placeholder).
+4. Click **Import** and then **Install / Re-install** — WowUp reads `release.json`, `ForeverQuestPath-v1.7.0-forever.zip`, and `ForeverQuestPath_Forever.toc` automatically and replaces any `Unknown` manual local folder (which otherwise shows an `"F"` placeholder).
 
 ---
 
@@ -41,9 +43,9 @@ You can install and auto-update **ForeverQuestPath** for **WoW Forever (`Interfa
 You can download a prebuilt release binary directly without cloning the repo:
 
 1. Download the latest archive:
-   - Direct asset (`v1.6.2`): [`ForeverQuestPath-v1.6.2-forever.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.6.2-forever.zip)
+   - Direct asset (`v1.7.0`): [`ForeverQuestPath-v1.7.0-forever.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.7.0-forever.zip)
    - All releases: [`github.com/sebmak/ForeverQuestPath/releases/latest`](https://github.com/sebmak/ForeverQuestPath/releases/latest)
-2. Extract `ForeverQuestPath-v1.6.2-forever.zip` into your WoW Forever AddOns directory:
+2. Extract `ForeverQuestPath-v1.7.0-forever.zip` into your WoW Forever AddOns directory:
    - **macOS:** `/Applications/World of Warcraft/_forever_/Interface/AddOns/`
    - **Windows:** `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\`
 3. Confirm the extracted folder structure contains:

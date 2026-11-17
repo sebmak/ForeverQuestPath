@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Forever Quest Path
-## Notes: Optimal 1-60 quest routing, terrain-aware pathfinding, dungeon unlock tracking, and reward balancing for all races and classes on WoW Forever.
+## Notes: Optimal 1-60 quest routing, terrain-aware pathfinding, dungeon unlock tracking, 12-profession prioritization, leveling stats, and reward balancing for all races and classes on WoW Forever.
 ## Author: sebmak
-## Version: 1.6.2
+## Version: 1.7.0
 ## Category: Quests
 ## X-Category: Quests
 ## Website: https://github.com/sebmak/ForeverQuestPath
@@ -21,9 +21,12 @@
 Core.lua
 Data\GeneratedData.lua
 Data\NavData.lua
+Data\ProfessionData.lua
+Professions.lua
 Nav.lua
 State.lua
 Scorer.lua
+Stats.lua
 Waypoint.lua
 UI\QuestInfo.lua
 UI\HUD.lua

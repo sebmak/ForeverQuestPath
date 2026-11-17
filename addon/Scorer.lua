@@ -2,7 +2,8 @@
 -- Scorer.lua
 -- Rules:
 --   1. Multi-objective dynamic quest re-scorer (XP, Travel, Dungeon Unlocks,
---      Gold/Bags/Class BiS Gear, and Skinning/Leatherworking) prioritizing
+--      Gold/Bags/Class BiS Gear, and all 12 Selected Professions / Synergy via
+--      ns.Professions) prioritizing
 --      in-window dungeons, local-zone momentum (including boosted same-hub /
 --      on-path same-zone ACCEPT quests within ~25 yds), cross-zone and
 --      cross-continent cohesion, single-use virtual Hearthstone lookahead
@@ -12,8 +13,9 @@
 --      and chain progress annotations, recent/friend chain follow-ups,
 --      travel-aware ready turn-ins, hub-batched turn-ins, and opposing-faction
 --      zone penalties, plus priority class quests, unlock chains, and rewards.
---   2. Consumes embedded GeneratedData (quests, dungeons, zones, xpCurve,
---      classScores, indexes) plus live/overridden character state, user
+--   2. Consumes embedded GeneratedData + ProfessionData overlays (quests,
+--      dungeons, zones, xpCurve, classScores, profScores, profRewards,
+--      indexes) plus live/overridden character state, user
 --      slider weights/toggles, QuestieDB turn-in fallbacks via State, and
 --      configurable maxLevelOffset (-3..+5, default +2), bounding QuestieDB
 --      IsDoable checks, memoizing static GetDungeonUnlockInfo results in
@@ -269,6 +271,7 @@ local function EnsureIndexes(data)
         classRewardIds = classRewards,
         lwQuestIds = lw,
         skinningQuestIds = skin,
+        professionQuestIds = (di and di.professionQuestIds) or {},
         specialRewardIds = special,
         classQuests = classQuests,
         byZone = byZone,
@@ -579,17 +582,24 @@ local function ComputeCandidateMetrics(q, action, vState, weights, toggles, data
     end
     local rewardNorm = math.min(100, math.max(bagScore, gearScore * 0.85) + goldScore * 0.45)
 
-    -- Skinning & Leatherworking component (0..100)
+    -- Selected Profession synergy component (all 12 professions, 0..100)
     local skinScore = tonumber(q.skinningScore or (q.features and q.features.skinningValue)) or 0
     local reqId = type(q.requiredSkill) == "table" and tonumber(q.requiredSkill.skillId or q.requiredSkill[1]) or nil
     local isLW = (q.isLeatherworking == true) or (type(q.lwRewards) == "table" and #q.lwRewards > 0) or (reqId == 165)
     local isSkin = (q.isSkinning == true) or (reqId == 393) or (skinScore >= 30)
-    local skinningNorm = math.min(100, skinScore)
-    if isLW then
-        skinningNorm = math.max(skinningNorm, 75)
-    end
-    if toggles.prioritizeSkinningLW == false then
-        skinningNorm = skinningNorm * 0.2
+    local skinningNorm
+    local profSkillId = nil
+    if ns.Professions and ns.Professions.ScoreQuestForPlayer then
+        local activeProfKey = ns.charDB and ns.charDB.activeProfile or nil
+        skinningNorm, profSkillId = ns.Professions.ScoreQuestForPlayer(q, p.professions, toggles, activeProfKey)
+    else
+        skinningNorm = math.min(100, skinScore)
+        if isLW then
+            skinningNorm = math.max(skinningNorm, 75)
+        end
+        if toggles.prioritizeSkinningLW == false or toggles.prioritizeProfessions == false then
+            skinningNorm = skinningNorm * 0.2
+        end
     end
 
     -- Momentum bonus keeps player turning in finished quests & clearing active log quests
@@ -696,6 +706,7 @@ local function ComputeCandidateMetrics(q, action, vState, weights, toggles, data
     out.isLW = isLW
     out.isSkin = isSkin
     out.skinningNorm = skinningNorm
+    out.profSkillId = profSkillId
     out.travelMins = travelMins
     out.targetRegion = rTo
     out.isCrossContinent = isCrossContinent
@@ -751,7 +762,13 @@ local function MaterializeCandidate(m, vState, data)
     elseif m.goldCopper >= 3500 then
         reasons[#reasons + 1] = ns.FormatMoneyPlain(m.goldCopper)
     end
-    if m.isLW then
+    if m.profSkillId and ns.Professions and ns.Professions.GetName then
+        if m.profSkillId == 393 and m.skinScore and m.skinScore >= 30 then
+            reasons[#reasons + 1] = string.format("Skinning %d", math.floor(m.skinScore + 0.5))
+        else
+            reasons[#reasons + 1] = ns.Professions.GetName(m.profSkillId)
+        end
+    elseif m.isLW then
         reasons[#reasons + 1] = "Leatherworking"
     elseif m.isSkin then
         reasons[#reasons + 1] = string.format("Skinning %d", math.floor(m.skinScore + 0.5))
@@ -823,6 +840,7 @@ local function MaterializeCandidate(m, vState, data)
             skinningScore = m.skinScore,
             isLeatherworking = m.isLW,
             isSkinning = m.isSkin,
+            profSkillId = m.profSkillId,
             requiredSkill = q.requiredSkill,
             unlocksDungeon = m.dungeonInfo and m.dungeonInfo.dungeonName or nil,
         },
@@ -877,8 +895,13 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
         local hasQdb = (_G.QuestieDB ~= nil or _G.QuestieLoader ~= nil) and 1 or 0
         local rankSkipElite = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(vp, toggles) or (toggles.skipEliteSolo ~= false and not (vp and vp.inGroup))
         local rankSkipDungeons = (ns.State and ns.State.ShouldSkipDungeonsNow) and ns.State.ShouldSkipDungeonsNow(toggles) or (toggles.skipDungeons ~= false)
+        local pMask, pRankSig = 0, 0
+        if ns.Professions and ns.Professions.GetProfSignatures then
+            pMask, pRankSig = ns.Professions.GetProfSignatures(vp.professions)
+        end
+        local prioProf = (not ns.Professions or ns.Professions.IsPrioritizeEnabled(toggles))
         rankLiveKey = string.format(
-            "%d:%d:%d:%d:%s:%d:%d:%d:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%d:%s:%s:%d:%d:%d:%d:%d",
+            "%d:%d:%d:%d:%s:%d:%d:%d:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%d:%s:%s:%d:%d:%d:%d:%d:%d:%d",
             gen, sGen, pLevel, maxOffset, tostring(vState.zoneId or 0), qx, qy, cap,
             tonumber(weights.xp) or 45,
             tonumber(weights.travel) or 25,
@@ -889,7 +912,7 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             tostring(toggles.preferDungeonUnlocks ~= false),
             tostring(toggles.prioritizeBags ~= false),
             tostring(toggles.prioritizeClassGear ~= false and toggles.prioritizeRogueGear ~= false),
-            tostring(toggles.prioritizeSkinningLW ~= false),
+            tostring(prioProf),
             tostring(toggles.locationReorder ~= false),
             tonumber(vp.raceId) or 0,
             tostring(vp.faction or "Alliance"),
@@ -898,7 +921,9 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             hasQdb,
             (ns.State.GetBlockedStepCount and ns.State.GetBlockedStepCount()) or #((ns.State.GetBlockedSteps and ns.State.GetBlockedSteps()) or {}),
             rankSkipElite and 1 or 0,
-            rankSkipDungeons and 1 or 0
+            rankSkipDungeons and 1 or 0,
+            pMask,
+            pRankSig
         ) .. "|" .. readySig .. "|" .. locSig
         local hAvail = (vState.hearthAvailable == false) and 0 or 1
         local stickySig = (vState.useStickyCommit and lastDynamicCommit.valid)
@@ -944,6 +969,8 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             vp.hasLeatherworking = sp.hasLeatherworking
             vp.skinningRank = sp.skinningRank
             vp.leatherworkingRank = sp.leatherworkingRank
+            vp.profMask = sp.profMask
+            vp.profRankSig = sp.profRankSig
             vp.professions = sp.professions
             vp.bindLocation = sp.bindLocation
             vp.hearthZoneId = sp.hearthZoneId
@@ -1144,6 +1171,7 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             or ns.GetQuestClassScore(q, pClassFile) >= 50
             or (q.classMask and q.classMask > 0)
             or q.isLeatherworking
+            or (ns.Professions and ns.Professions.IsQuestDirectMatch and ns.Professions.IsQuestDirectMatch(q, vPlayer and vPlayer.professions))
             or Scorer.GetDungeonUnlockInfo(qid, pLevel, data)
     end
 
@@ -1513,11 +1541,16 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
     local blkCount = (ns.State and ns.State.GetBlockedStepCount and ns.State.GetBlockedStepCount())
         or #((ns.State and ns.State.GetBlockedSteps and ns.State.GetBlockedSteps()) or {})
     local prof = player and player.professions
+    local pMask, pRankSig = 0, 0
+    if ns.Professions and ns.Professions.GetProfSignatures then
+        pMask, pRankSig = ns.Professions.GetProfSignatures(prof)
+    end
+    local prioProf = (not ns.Professions or ns.Professions.IsPrioritizeEnabled(toggles))
     local skipEliteNow = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(player, toggles) or (toggles.skipEliteSolo ~= false and not (player and player.inGroup))
     local skipDungeonsNow = (ns.State and ns.State.ShouldSkipDungeonsNow) and ns.State.ShouldSkipDungeonsNow(toggles) or (toggles.skipDungeons ~= false)
 
     local commitStateSig = string.format(
-        "%d:%d:%d:%d:%s:%s:%s:%s:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d:%d",
+        "%d:%d:%d:%d:%s:%s:%s:%s:%.1f:%.1f:%.1f:%.1f:%.1f:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d:%d:%d:%d:%d",
         gen, sGen,
         tonumber(player and player.level) or 24,
         maxOffset,
@@ -1534,7 +1567,7 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
         tostring(toggles.preferDungeonUnlocks ~= false),
         tostring(toggles.prioritizeBags ~= false),
         tostring(toggles.prioritizeClassGear ~= false and toggles.prioritizeRogueGear ~= false),
-        tostring(toggles.prioritizeSkinningLW ~= false),
+        tostring(prioProf),
         tostring(toggles.locationReorder ~= false),
         tostring(toggles.proactiveChains ~= false),
         tostring(skipEliteNow),
@@ -1542,8 +1575,8 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
         tostring(player and player.raceId or 0),
         tostring(player and player.faction or "Alliance"),
         tostring(player and player.classFile or "ROGUE"),
-        tostring(prof and prof.skinningRank or -1),
-        tostring(prof and prof.leatherworkingRank or -1),
+        pMask,
+        pRankSig,
         hReady,
         hasQdb,
         blkCount
@@ -2038,14 +2071,21 @@ function Scorer.GetSpecialRewards(player, filterKind, limit, includeAllLevels)
     local classFile = player.classFile or "ROGUE"
     local classLabel = player.className or "Rogue"
     local gen = ns.State.GetRefreshGeneration and ns.State.GetRefreshGeneration() or 0
-    local cacheKey = string.format("%d:%s:%d:%s:%d:%s:%s:%s:%d:%s",
+    local toggles = (ns.charDB and ns.charDB.toggles) or {}
+    local pMask, pRankSig = 0, 0
+    if ns.Professions and ns.Professions.GetProfSignatures then
+        pMask, pRankSig = ns.Professions.GetProfSignatures(player.professions)
+    end
+    local prioProf = (not ns.Professions or ns.Professions.IsPrioritizeEnabled(toggles))
+    local cacheKey = string.format("%d:%s:%d:%s:%d:%d:%d:%s:%s:%d:%s",
         gen,
         tostring(filterKind),
         tonumber(limit) or 20,
         tostring(includeAllLevels == true),
         level,
-        tostring(player.hasSkinning == true),
-        tostring(player.hasLeatherworking == true),
+        pMask,
+        pRankSig,
+        tostring(prioProf),
         tostring(player.faction or "Alliance"),
         tonumber(player.raceId) or 0,
         tostring(classFile))
@@ -2055,6 +2095,7 @@ function Scorer.GetSpecialRewards(player, filterKind, limit, includeAllLevels)
 
     local data = ns.GetData()
     local idx = EnsureIndexes(data)
+    local pQids = idx.professionQuestIds or {}
     local candidateIds = {}
     local seen = {}
 
@@ -2067,6 +2108,8 @@ function Scorer.GetSpecialRewards(player, filterKind, limit, includeAllLevels)
             end
         end
     end
+
+    local activeSkillIds = (ns.Professions and ns.Professions.GetActiveSkillIds and ns.Professions.GetActiveSkillIds(player.professions, false)) or {}
 
     if filterKind == "bags" then
         AppendIds(idx.bagQuestIds)
@@ -2081,14 +2124,31 @@ function Scorer.GetSpecialRewards(player, filterKind, limit, includeAllLevels)
         AppendIds(idx.skinningQuestIds)
     elseif filterKind == "lw" then
         AppendIds(idx.lwQuestIds)
-    elseif filterKind == "skinning_lw" or filterKind == "professions" then
+    elseif filterKind == "skinning_lw" then
         AppendIds(idx.lwQuestIds)
         AppendIds(idx.skinningQuestIds)
+    elseif filterKind == "professions" then
+        if #activeSkillIds > 0 then
+            for _, sid in ipairs(activeSkillIds) do
+                AppendIds(pQids[sid])
+                if sid == 165 then AppendIds(idx.lwQuestIds) end
+                if sid == 393 then AppendIds(idx.skinningQuestIds) end
+            end
+        else
+            for _, pMeta in ipairs((ns.Professions and ns.Professions.GetOrdered and ns.Professions.GetOrdered()) or {}) do
+                AppendIds(pQids[pMeta.id])
+            end
+            AppendIds(idx.lwQuestIds)
+            AppendIds(idx.skinningQuestIds)
+        end
     else
         AppendIds(idx.specialRewardIds)
         AppendIds(idx.classRewardIds)
         AppendIds(idx.lwQuestIds)
         AppendIds(idx.skinningQuestIds)
+        for _, sid in ipairs(activeSkillIds) do
+            AppendIds(pQids[sid])
+        end
     end
 
     local results = {}
@@ -2114,13 +2174,43 @@ function Scorer.GetSpecialRewards(player, filterKind, limit, includeAllLevels)
                 local isLW = (q.isLeatherworking == true) or (type(q.lwRewards) == "table" and #q.lwRewards > 0) or (reqId == 165)
                 local isSkin = (q.isSkinning == true) or (skinScore >= 30) or (reqId == 393)
 
-                local matchesFilter = (filterKind == "all" and (isBag or isGold or isClassBiS or isLW or isSkin))
+                local profScore, profSkillId = 0, nil
+                if ns.Professions and ns.Professions.ScoreQuestForPlayer and (#activeSkillIds > 0) then
+                    profScore, profSkillId = ns.Professions.ScoreQuestForPlayer(q, player.professions, toggles, nil)
+                elseif filterKind == "professions" then
+                    if type(q.profScores) == "table" then
+                        for psid, pval in pairs(q.profScores) do
+                            if pval > profScore then
+                                profScore = pval
+                                profSkillId = tonumber(psid)
+                            end
+                        end
+                    end
+                    if reqId and profScore < 88 then
+                        profScore = 88
+                        profSkillId = reqId
+                    end
+                    if type(q.profRewards) == "table" and q.profRewards[1] and profScore < 90 then
+                        profScore = 90
+                        profSkillId = tonumber(q.profRewards[1].skillId) or profSkillId
+                    end
+                    if isLW and profScore < 80 then profScore = 80; profSkillId = 165 end
+                    if isSkin and skinScore > profScore then profScore = skinScore; profSkillId = 393 end
+                end
+
+                local isDirectProfReq = (reqId ~= nil) and (
+                    (pMask == 0 and filterKind == "professions")
+                    or (ns.Professions and ns.Professions.HasProfession and ns.Professions.HasProfession(player.professions, reqId))
+                )
+
+                local matchesFilter = (filterKind == "all" and (isBag or isGold or isClassBiS or isLW or isSkin or profScore >= 30))
                     or (filterKind == "bags" and isBag)
                     or (filterKind == "gold" and isGold)
                     or ((filterKind == "rogue" or filterKind == "bis" or filterKind == "class") and isClassBiS)
                     or (filterKind == "skinning" and isSkin)
                     or (filterKind == "lw" and isLW)
-                    or ((filterKind == "skinning_lw" or filterKind == "professions") and (isLW or isSkin))
+                    or (filterKind == "skinning_lw" and (isLW or isSkin))
+                    or (filterKind == "professions" and (profScore >= 30 or isDirectProfReq))
 
                 if matchesFilter then
                     local valueScore = (isBag and (60 + bags * 4) or 0)
@@ -2128,7 +2218,13 @@ function Scorer.GetSpecialRewards(player, filterKind, limit, includeAllLevels)
                         + math.min(60, gold / 300.0)
                         + (isLW and 55 or 0)
                         + (skinScore * 0.65)
+                        + ((filterKind == "professions" or profSkillId ~= nil) and (profScore * 0.85) or 0)
                         - math.abs(qL - level) * 2.5
+
+                    local profBadge = nil
+                    if ns.Professions and ns.Professions.FormatQuestBadge then
+                        profBadge = ns.Professions.FormatQuestBadge(q, { profSkillId = profSkillId }, player.professions, true)
+                    end
 
                     local pt = Scorer.GetQuestPoint(q, "ACCEPT")
                     local zId = (pt and pt.zoneId) or q.zoneId
@@ -2153,6 +2249,10 @@ function Scorer.GetSpecialRewards(player, filterKind, limit, includeAllLevels)
                         isLeatherworking = isLW,
                         isSkinning = isSkin,
                         lwRewards = q.lwRewards or {},
+                        profSkillId = profSkillId,
+                        profScore = profScore,
+                        profRewards = q.profRewards or {},
+                        profBadge = profBadge,
                         requiredSkill = q.requiredSkill,
                         specialRewards = q.specialRewards or {},
                         status = ns.State.GetQuestStatus(qid, true),

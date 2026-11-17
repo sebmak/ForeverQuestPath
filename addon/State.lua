@@ -6,7 +6,8 @@
 --      zone/coordinates (with UnitOnTaxi and dead/ghost location freeze via
 --      IsPlayerLocationFrozen, lastAliveLocation, and deadBootLocation across
 --      /reload while already dead + resurrection resume), active quest log,
---      learned professions (Skinning 393 / Leatherworking 165), and completed
+--      learned professions across all 12 skills via ns.Professions, journey
+--      tracking via ns.Stats, and completed
 --      quest flags via zero-clone GetCompletedReadOnly() and incremental
 --      completedBulk/completedMemo updates (including O(1) QUEST_TURNED_IN).
 --   3. Selects optimal precomputed routes (1-60 primary, per-race starterRoutes,
@@ -560,6 +561,12 @@ local PROFESSION_REFRESH_REASONS = {
     SKILL_LINES_CHANGED = true,
     CHAT_MSG_SKILL = true,
     MANUAL_RESET = true,
+    PROFESSIONS_UPDATED = true,
+    TOGGLE_autoDetectProfessions = true,
+    TOGGLE_hasSkinning = true,
+    TOGGLE_hasLeatherworking = true,
+    TOGGLE_prioritizeProfessions = true,
+    TOGGLE_prioritizeSkinningLW = true,
 }
 local BULK_COMPLETED_REASONS = {
     PLAYER_LOGIN = true,
@@ -938,9 +945,14 @@ function State.DetectProfessions(forceRefresh)
         end
     end
 
+    local cdb = ns.charDB
+    if ns.Professions and ns.Professions.BuildProfessionState then
+        professionCache = ns.Professions.BuildProfessionState(skills, clientReported, apiAvailable, cdb)
+        return professionCache
+    end
+
     local clientSkin = skills[SKILL_SKINNING] ~= nil
     local clientLW = skills[SKILL_LEATHERWORKING] ~= nil
-    local cdb = ns.charDB
     local toggles = (cdb and cdb.toggles) or {}
 
     local hasSkinning
@@ -1337,27 +1349,55 @@ function State.GetPlayerInfo()
     local cdb = ns.charDB or {}
     local toggles = cdb.toggles or {}
     local isOverride = (toggles.autoDetectChar == false)
-    local raceInfo = (isOverride and cdb.overrideRace and State.ResolveRace(cdb.overrideRace))
-        or State.ResolveRace(liveRaceFile)
-        or State.ResolveRace(liveRaceName)
-        or State.ResolveRace(liveRaceId)
-    local classInfo = (isOverride and cdb.overrideClass and State.ResolveClass(cdb.overrideClass))
-        or State.ResolveClass(liveClassFile)
-        or State.ResolveClass(liveClassName)
-        or State.ResolveClass(liveClassId)
+    local pc = playerCache
+    local raceName, raceFile, raceId, raceBitmask, startZoneId
+    if (not isOverride) and pc and (not pc.isCharOverride)
+        and pc.liveRaceFile == liveRaceFile
+        and pc.liveRaceName == liveRaceName
+        and pc.liveRaceId == liveRaceId then
+        raceName = liveRaceName
+        raceFile = liveRaceFile
+        raceId = pc.raceId
+        raceBitmask = pc.raceBitmask
+        startZoneId = pc.startZoneId
+    else
+        local raceInfo = (isOverride and cdb.overrideRace and State.ResolveRace(cdb.overrideRace))
+            or State.ResolveRace(liveRaceFile)
+            or State.ResolveRace(liveRaceName)
+            or State.ResolveRace(liveRaceId)
+        raceName = (isOverride and raceInfo and raceInfo.label) or liveRaceName
+        raceFile = (isOverride and raceInfo and raceInfo.key) or liveRaceFile
+        raceId = (raceInfo and raceInfo.id and raceInfo.id > 0 and raceInfo.id) or liveRaceId
+        raceBitmask = (raceInfo and raceInfo.bitmask and raceInfo.bitmask > 0 and raceInfo.bitmask) or (raceId and raceId >= 1 and raceId <= 50 and (2 ^ (raceId - 1)) or 0)
+        startZoneId = raceInfo and raceInfo.startZoneId or nil
+    end
 
-    local raceName = (isOverride and raceInfo and raceInfo.label) or liveRaceName
-    local raceFile = (isOverride and raceInfo and raceInfo.key) or liveRaceFile
-    local raceId = (raceInfo and raceInfo.id and raceInfo.id > 0 and raceInfo.id) or liveRaceId
-    local raceBitmask = (raceInfo and raceInfo.bitmask and raceInfo.bitmask > 0 and raceInfo.bitmask) or (raceId and raceId >= 1 and raceId <= 50 and (2 ^ (raceId - 1)) or 0)
-    local startZoneId = raceInfo and raceInfo.startZoneId or nil
+    local className, classFile, classId, classBitmask
+    if (not isOverride) and pc and (not pc.isCharOverride)
+        and pc.liveClassFile == liveClassFile
+        and pc.liveClassName == liveClassName
+        and pc.liveClassId == liveClassId then
+        className = liveClassName
+        classFile = pc.classFile
+        classId = pc.classId
+        classBitmask = pc.classBitmask
+    else
+        local classInfo = (isOverride and cdb.overrideClass and State.ResolveClass(cdb.overrideClass))
+            or State.ResolveClass(liveClassFile)
+            or State.ResolveClass(liveClassName)
+            or State.ResolveClass(liveClassId)
+        className = (isOverride and classInfo and classInfo.label) or liveClassName
+        classFile = string.upper((isOverride and classInfo and classInfo.key) or liveClassFile or "ROGUE")
+        classId = (classInfo and classInfo.id and classInfo.id > 0 and classInfo.id) or liveClassId
+        classBitmask = (classInfo and classInfo.bitmask and classInfo.bitmask > 0 and classInfo.bitmask) or (classId and classId >= 1 and classId <= 30 and (2 ^ (classId - 1)) or 0)
+    end
 
-    local className = (isOverride and classInfo and classInfo.label) or liveClassName
-    local classFile = string.upper((isOverride and classInfo and classInfo.key) or liveClassFile or "ROGUE")
-    local classId = (classInfo and classInfo.id and classInfo.id > 0 and classInfo.id) or liveClassId
-    local classBitmask = (classInfo and classInfo.bitmask and classInfo.bitmask > 0 and classInfo.bitmask) or (classId and classId >= 1 and classId <= 30 and (2 ^ (classId - 1)) or 0)
-
-    local faction = (isOverride and ((raceInfo and raceInfo.faction) or cdb.overrideFaction)) or liveFaction
+    local faction = (isOverride and cdb.overrideRace and State.ResolveRace(cdb.overrideRace) and State.ResolveRace(cdb.overrideRace).faction)
+        or (isOverride and cdb.overrideFaction)
+        or liveFaction
+    if isOverride and not faction then
+        faction = liveFaction
+    end
     local bindLocation = GetBindLocation and GetBindLocation() or nil
 
     local uiMapId = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player") or nil
@@ -1381,7 +1421,12 @@ function State.GetPlayerInfo()
     local mapInfo = uiMapId and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(uiMapId) or nil
     local zoneName = (mapInfo and mapInfo.name) or (GetRealZoneText and GetRealZoneText()) or "Wetlands"
     local subZoneName = GetSubZoneText and GetSubZoneText() or ""
-    local zoneId = State.ResolveZoneId(uiMapId, zoneName) or startZoneId or 11
+    local zoneId
+    if pc and (not pc.inInstance) and pc.uiMapId == uiMapId and pc.zoneName == zoneName and pc.startZoneId == startZoneId then
+        zoneId = pc.zoneId
+    else
+        zoneId = State.ResolveZoneId(uiMapId, zoneName) or startZoneId or 11
+    end
     local deadNow = (ns.IsPlayerDeadOrGhost and ns.IsPlayerDeadOrGhost()) and true or false
     local onTaxiNow = (UnitOnTaxi and UnitOnTaxi("player")) and true or false
     local inGroupNow = (ns.IsPlayerInGroup and ns.IsPlayerInGroup()) and true or false
@@ -1475,7 +1520,6 @@ function State.GetPlayerInfo()
     end
 
     local isCharOverride = isOverride and (cdb.overrideRace ~= nil or cdb.overrideClass ~= nil)
-    local pc = playerCache
     if pc
         and pc.name == name
         and pc.realm == realm
@@ -1495,8 +1539,10 @@ function State.GetPlayerInfo()
         and pc.faction == faction
         and pc.liveRaceName == liveRaceName
         and pc.liveRaceFile == liveRaceFile
+        and pc.liveRaceId == liveRaceId
         and pc.liveClassName == liveClassName
         and pc.liveClassFile == liveClassFile
+        and pc.liveClassId == liveClassId
         and pc.liveFaction == liveFaction
         and pc.isCharOverride == isCharOverride
         and pc.bindLocation == bindLocation
@@ -1517,6 +1563,8 @@ function State.GetPlayerInfo()
         and pc.leatherworkingRank == prof.leatherworkingRank
         and pc.detectedSkinning == prof.detectedSkinning
         and pc.detectedLeatherworking == prof.detectedLeatherworking
+        and pc.profMask == prof.profMask
+        and pc.profRankSig == prof.rankSig
         and pc.professions == prof
     then
         return pc
@@ -1541,8 +1589,10 @@ function State.GetPlayerInfo()
         faction = faction,
         liveRaceName = liveRaceName,
         liveRaceFile = liveRaceFile,
+        liveRaceId = liveRaceId,
         liveClassName = liveClassName,
         liveClassFile = liveClassFile,
+        liveClassId = liveClassId,
         liveFaction = liveFaction,
         isCharOverride = isCharOverride,
         bindLocation = bindLocation,
@@ -1563,6 +1613,8 @@ function State.GetPlayerInfo()
         leatherworkingRank = prof.leatherworkingRank,
         detectedSkinning = prof.detectedSkinning,
         detectedLeatherworking = prof.detectedLeatherworking,
+        profMask = prof.profMask,
+        profRankSig = prof.rankSig,
         professions = prof,
     }
     return playerCache
@@ -2295,27 +2347,22 @@ local function IsRequiredSkillBlocked(reqSkill, prof, reasonless)
     if not reqId or reqId <= 0 then
         return nil, nil
     end
-    if reqId ~= SKILL_SKINNING and reqId ~= SKILL_LEATHERWORKING then
-        if SECONDARY_SKILLS[reqId] and prof.skills[reqId] ~= nil then
-            if reqRank > 0 and prof.skills[reqId] < reqRank then
-                local skillName = not reasonless and (SKILL_ID_NAMES[reqId] or ("Profession #" .. tostring(reqId)))
-                return "skill_rank_too_low", reasonless and "skill_rank_too_low" or string.format("Requires %s (%d, currently %d)", skillName, reqRank, prof.skills[reqId])
-            end
-        else
-            local skillName = not reasonless and (SKILL_ID_NAMES[reqId] or ("Profession #" .. tostring(reqId)))
-            return "wrong_profession", reasonless and "wrong_profession" or string.format("Requires %s (excluded profession)", skillName)
-        end
-    else
-        local hasProf = (reqId == SKILL_SKINNING and prof.hasSkinning) or (reqId == SKILL_LEATHERWORKING and prof.hasLeatherworking)
-        if not hasProf then
-            local skillName = not reasonless and (SKILL_ID_NAMES[reqId] or ("Profession #" .. tostring(reqId)))
+    prof = prof or State.DetectProfessions()
+    local hasProf = (ns.Professions and ns.Professions.HasProfession(prof, reqId))
+        or (reqId == SKILL_SKINNING and prof and prof.hasSkinning)
+        or (reqId == SKILL_LEATHERWORKING and prof and prof.hasLeatherworking)
+        or (SECONDARY_SKILLS[reqId] and prof and prof.skills and prof.skills[reqId] ~= nil)
+    if not hasProf then
+        local skillName = not reasonless and (SKILL_ID_NAMES[reqId] or ("Profession #" .. tostring(reqId)))
+        if reqId == SKILL_SKINNING or reqId == SKILL_LEATHERWORKING then
             return "missing_profession", reasonless and "missing_profession" or string.format("Requires %s", skillName)
         end
-        local knownRank = prof.skills[reqId]
-        if reqRank > 0 and knownRank ~= nil and knownRank < reqRank then
-            local skillName = not reasonless and (SKILL_ID_NAMES[reqId] or ("Profession #" .. tostring(reqId)))
-            return "skill_rank_too_low", reasonless and "skill_rank_too_low" or string.format("Requires %s (%d, currently %d)", skillName, reqRank, knownRank)
-        end
+        return "wrong_profession", reasonless and "wrong_profession" or string.format("Requires %s (unselected profession)", skillName)
+    end
+    local knownRank = ns.Professions and ns.Professions.GetKnownRank(prof, reqId) or (prof and prof.skills and prof.skills[reqId])
+    if reqRank > 0 and knownRank ~= nil and knownRank < reqRank then
+        local skillName = not reasonless and (SKILL_ID_NAMES[reqId] or ("Profession #" .. tostring(reqId)))
+        return "skill_rank_too_low", reasonless and "skill_rank_too_low" or string.format("Requires %s (%d, currently %d)", skillName, reqRank, knownRank)
     end
     return nil, nil
 end
@@ -2417,11 +2464,17 @@ function State.GetQuestBlockReason(questId, action, player, extraCompleted, extr
     local baseBucket = nil
     local postBucket = nil
     if canUseBaseMemo or canUsePostMemo then
-        local baseSig = level * 4
-            + ((prof and prof.hasSkinning == true) and 2 or 0)
-            + ((prof and prof.hasLeatherworking == true) and 1 or 0)
+        local pMask, pRankSig
+        if ns.Professions and ns.Professions.GetProfSignatures then
+            pMask, pRankSig = ns.Professions.GetProfSignatures(prof)
+        else
+            pMask = ((prof and prof.hasSkinning == true) and 2 or 0)
+                + ((prof and prof.hasLeatherworking == true) and 1 or 0)
+            pRankSig = (prof and ((prof.skinningRank or -1) * 10000 + (prof.leatherworkingRank or -1))) or 0
+        end
+        local baseSig = level * 4096 + pMask
         local charSig = (player and (((tonumber(player.raceId) or 0) * 64 + (tonumber(player.classId) or 0)) * 4 + (FACTION_TO_SIDE[player.faction] or 1))) or 0
-        local rSig = charSig * 100000000 + ((prof and ((prof.skinningRank or -1) * 10000 + (prof.leatherworkingRank or -1))) or 0)
+        local rSig = charSig * 2147483647 + pRankSig
         if (not questBaseMemo) or questBlockMemoBaseSig ~= baseSig or questBlockMemoRankSig ~= rSig then
             questBaseMemo = { {}, {} }
             questPostMemo = { {}, {}, {}, {} }
@@ -5375,6 +5428,9 @@ function State.CheckLivePosition(force)
         return true
     end
 
+    if ns.Stats and ns.Stats.RecordMovement then
+        ns.Stats.RecordMovement(zoneId, px, py, nil, inInstNow, instNameNow, deadNow, false)
+    end
     lastRawUiMapId = uiMapId
     lastRawGx = rawGx
     lastRawGy = rawGy
@@ -6874,9 +6930,11 @@ function perfScratch.InjectOptimalPathAvailableQuests(gbw, pX, pY, player, toggl
             and not ((completedMap[qid] == true) or (checkCompSlow ~= nil and checkCompSlow(qid, true)) or readyImm[qid]) then
             local minLv = tonumber(q.minLevel) or 1
             local qLv = tonumber(q.questLevel) or minLv
+            local isDirectProf = (ns.Professions and ns.Professions.IsQuestDirectMatch and ns.Professions.IsQuestDirectMatch(q, prof, toggles)) or false
             local nonTrivial = (qLv > pLevel - 7)
                 or ((tonumber(q.bagSlots) or 0) > 0)
                 or (q.classMask and q.classMask > 0)
+                or isDirectProf
             if minLv <= pLevel
                 and qLv <= maxCandLv
                 and nonTrivial
@@ -6932,13 +6990,13 @@ function perfScratch.InjectOptimalPathAvailableQuests(gbw, pX, pY, player, toggl
 
                 if (not blockedExcl) and prereqOk then
                     local sPt = GetQuestStepPoint(q, "ACCEPT")
-                    if sPt and sPt.x and sPt.y and TurninDist(pX, pY, sPt.x, sPt.y) <= 30.0 then
+                    if sPt and sPt.x and sPt.y and TurninDist(pX, pY, sPt.x, sPt.y) <= (isDirectProf and 65.0 or 30.0) then
                         local sCount = (wCount < 8) and wCount or 8
                         local sNode, sDet = perfScratch.MinPathProximity(sPt.x, sPt.y, wpX, wpY, sCount)
-                        if sNode <= 12.0 or sDet <= 6.5 then
+                        if sNode <= (isDirectProf and 45.0 or 12.0) or sDet <= 6.5 then
                             local pathOk = true
                             local oNode, oDet = nil, nil
-                            if QuestHasObjectives(q, nil) then
+                            if (not isDirectProf) and QuestHasObjectives(q, nil) then
                                 local oPt = GetQuestStepPoint(q, "COMPLETE")
                                 if oPt and oPt.x and oPt.y then
                                     oNode, oDet = perfScratch.MinPathProximity(oPt.x, oPt.y, wpX, wpY, wCount)
@@ -6948,7 +7006,7 @@ function perfScratch.InjectOptimalPathAvailableQuests(gbw, pX, pY, player, toggl
                                 end
                             end
                             local tNode, tDet = nil, nil
-                            if pathOk then
+                            if pathOk and (not isDirectProf) then
                                 local tPt = GetQuestStepPoint(q, "TURN_IN")
                                 if tPt and tPt.x and tPt.y then
                                     tNode, tDet = perfScratch.MinPathProximity(tPt.x, tPt.y, wpX, wpY, wCount)
@@ -6961,7 +7019,7 @@ function perfScratch.InjectOptimalPathAvailableQuests(gbw, pX, pY, player, toggl
                                 local sMin = math.min(sNode, math.max(0, sDet))
                                 local oMin = oNode and math.min(oNode, math.max(0, oDet)) or 0
                                 local tMin = tNode and math.min(tNode, math.max(0, tDet)) or 0
-                                local cost = sMin + 0.35 * oMin + 0.15 * tMin
+                                local cost = sMin + 0.35 * oMin + 0.15 * tMin - (isDirectProf and 4.0 or 0)
                                 local ins = candCount + 1
                                 for ci = 1, candCount do
                                     local cc = costs[ci]
@@ -10163,6 +10221,9 @@ function State.Initialize()
     State.BuildIndexes()
     State.RefreshCompletedBulk()
     local pInfo = State.GetPlayerInfo()
+    if ns.Stats and ns.Stats.RecordMovement and pInfo then
+        ns.Stats.RecordMovement(pInfo.zoneId, pInfo.x, pInfo.y, pInfo.zoneName, pInfo.inInstance, pInfo.activeDungeonId, pInfo.isDead, pInfo.onTaxi)
+    end
     perfScratch.lastObservedInGroup = (pInfo and pInfo.inGroup == true)
     if (not pInfo.onTaxi) and (not pInfo.isDead) and ns.GetPlayerInstanceState then
         local curInInst, curInstName, curInstMapId = ns.GetPlayerInstanceState()
@@ -10270,6 +10331,14 @@ function State.Refresh(reason, arg1, arg2)
         lastGpsTargetKey = nil
     elseif reason == "TOGGLE_skipEliteSolo" or reason == "TOGGLE_skipDungeons" then
         lastGpsTargetKey = nil
+    elseif reason == "TOGGLE_hasSkinning" then
+        if ns.charDB and type(ns.charDB.selectedProfessions) == "table" then
+            ns.charDB.selectedProfessions[SKILL_SKINNING] = (ns.charDB.toggles and ns.charDB.toggles.hasSkinning == true)
+        end
+    elseif reason == "TOGGLE_hasLeatherworking" then
+        if ns.charDB and type(ns.charDB.selectedProfessions) == "table" then
+            ns.charDB.selectedProfessions[SKILL_LEATHERWORKING] = (ns.charDB.toggles and ns.charDB.toggles.hasLeatherworking == true)
+        end
     end
 
     refreshExecuted = refreshExecuted + 1
@@ -10371,6 +10440,9 @@ function State.Refresh(reason, arg1, arg2)
         State.RefreshCompletedBulk()
     end
     local pInfo = State.GetPlayerInfo()
+    if ns.Stats and ns.Stats.RecordMovement and pInfo then
+        ns.Stats.RecordMovement(pInfo.zoneId, pInfo.x, pInfo.y, pInfo.zoneName, pInfo.inInstance, pInfo.activeDungeonId, pInfo.isDead, pInfo.onTaxi)
+    end
     perfScratch.lastObservedInGroup = (pInfo and pInfo.inGroup == true)
     if (not pInfo.onTaxi) and (not pInfo.isDead) and ns.GetPlayerInstanceState then
         local curInInst, curInstName, curInstMapId = ns.GetPlayerInstanceState()

@@ -505,7 +505,7 @@ end
 local win = _G.ForeverQuestPathWindow
 assert(win, "Expected ForeverQuestPathWindow global frame")
 
-local tabs = {{ "route", "dungeons", "rewards", "diag" }}
+local tabs = {{ "route", "dungeons", "rewards", "stats", "diag" }}
 local function runTabRotation(label, maxPerSwitchMs)
     Mock.ResetMetrics()
     questieQueryCalls = 0
@@ -555,6 +555,17 @@ local tSkin0 = os.clock()
 skinFilterBtn:GetScript("OnClick")(skinFilterBtn)
 local skinMs = (os.clock() - tSkin0) * 1000.0
 assert(skinMs <= 50.0, string.format("'Skin/LW' rewards filter took %.2fms (> 50ms limit)", skinMs))
+
+local profFilterBtn = findButtonByText(win, "Profs")
+assert(profFilterBtn and profFilterBtn:GetScript("OnClick"), "Expected 'Profs' rewards filter button in Window")
+profFilterBtn:GetScript("OnClick")(profFilterBtn)
+
+ns.Window.ShowTab("stats")
+for _, lbl in ipairs({{ "By Zone", "Milestones", "Per-Level" }}) do
+    local sBtn = findButtonByText(win, lbl)
+    assert(sBtn and sBtn:GetScript("OnClick"), "Expected '" .. lbl .. "' button on Journey Stats tab")
+    sBtn:GetScript("OnClick")(sBtn)
+end
 
 local mFilters = Mock.GetMetrics()
 assert(mFilters.createFrameCalls == 0, "Filter clicks allocated frames: " .. tostring(mFilters.createFrameCalls))
@@ -3530,7 +3541,7 @@ Mock.FireEvent("ADDON_LOADED", addonName)
 Mock.FireEvent("PLAYER_LOGIN")
 Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
 
-assert(ns.version == "1.6.2", "Expected ns.version == 1.6.2, got " .. tostring(ns.version))
+assert(ns.version == "1.7.0", "Expected ns.version == 1.7.0, got " .. tostring(ns.version))
 assert(type(ns.QuestInfo) == "table", "Expected ns.QuestInfo module to be loaded")
 
 ns.HUD.SetShown(true)
@@ -4925,7 +4936,7 @@ print("ANTI_SHUFFLING_STABILITY_OK")
         toc_text = TOC_PATH.read_text(encoding="utf-8")
         for header in (
             "## Interface: 16001",
-            "## Version: 1.6.2",
+            "## Version: 1.7.0",
             "## Category: Quests",
             "## X-Category: Quests",
             "## Website: https://github.com/sebmak/ForeverQuestPath",
@@ -4974,8 +4985,8 @@ print("ANTI_SHUFFLING_STABILITY_OK")
             packager = mod.AddonReleasePackager(output_dir=Path(tmp_dir))
             version, zip_path, sha_path, release_json_path, sha256_hex = packager.build_archive()
 
-            self.assertEqual(version, "1.6.2")
-            self.assertEqual(zip_path.name, "ForeverQuestPath-v1.6.2-forever.zip")
+            self.assertEqual(version, "1.7.0")
+            self.assertEqual(zip_path.name, "ForeverQuestPath-v1.7.0-forever.zip")
             self.assertTrue(zip_path.is_file())
             self.assertTrue(sha_path.is_file())
             self.assertTrue(release_json_path.is_file())
@@ -4985,6 +4996,9 @@ print("ANTI_SHUFFLING_STABILITY_OK")
                 names = set(zf.namelist())
                 self.assertIn("ForeverQuestPath/ForeverQuestPath.toc", names)
                 self.assertIn("ForeverQuestPath/ForeverQuestPath_Forever.toc", names)
+                self.assertIn("ForeverQuestPath/Data/ProfessionData.lua", names)
+                self.assertIn("ForeverQuestPath/Professions.lua", names)
+                self.assertIn("ForeverQuestPath/Stats.lua", names)
                 self.assertIn("ForeverQuestPath/Media/Icon.tga", names)
                 self.assertIn("ForeverQuestPath/Media/IconRound.tga", names)
                 self.assertIn("ForeverQuestPath/Media/Icon.png", names)
@@ -4993,8 +5007,8 @@ print("ANTI_SHUFFLING_STABILITY_OK")
             self.assertEqual(len(release_meta.get("releases", [])), 1)
             rel_entry = release_meta["releases"][0]
             self.assertIs(rel_entry["nolib"], False)
-            self.assertEqual(rel_entry["version"], "v1.6.2")
-            self.assertEqual(rel_entry["filename"], "ForeverQuestPath-v1.6.2-forever.zip")
+            self.assertEqual(rel_entry["version"], "v1.7.0")
+            self.assertEqual(rel_entry["filename"], "ForeverQuestPath-v1.7.0-forever.zip")
             self.assertEqual(rel_entry["metadata"], [{"flavor": "forever", "interface": 16001}])
 
         lua_script = f"""
@@ -5034,6 +5048,278 @@ print("INGAME_ICON_UI_OK")
         rc, out, err = _run_luajit(lua_script)
         self.assertEqual(rc, 0, f"In-game icon UI check failed:\nSTDOUT: {out}\nSTDERR: {err}")
         self.assertIn("INGAME_ICON_UI_OK", out)
+
+    def test_multi_profession_selection_and_prioritization(self) -> None:
+        lua_script = f"""
+local Mock = dofile({str(WOW_MOCK_LUA)!r})
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter("Human", "Paladin", "Alliance", 55, 1437)
+Mock.SetSkills({{
+    {{ name = "Professions", isHeader = true, isExpanded = true }},
+    {{ name = "Blacksmithing", rank = 150, maxRank = 225, isAbandonable = true }},
+    {{ name = "Mining", rank = 240, maxRank = 300, isAbandonable = true }},
+    {{ name = "Secondary Skills", isHeader = true, isExpanded = true }},
+    {{ name = "Cooking", rank = 120, maxRank = 150 }},
+    {{ name = "First Aid", rank = 230, maxRank = 300 }},
+    {{ name = "Fishing", rank = 230, maxRank = 300 }},
+}}, false)
+
+local addonName, ns = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonName)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+
+local data = ns.GetData()
+local ordered = ns.Professions.GetOrdered()
+assert(#ordered == 12, "Expected 12 professions in registry, got " .. tostring(#ordered))
+for _, pMeta in ipairs(ordered) do
+    local lst = data.indexes and data.indexes.professionQuestIds and data.indexes.professionQuestIds[pMeta.id]
+    assert(type(lst) == "table" and #lst > 0, "Expected indexed profession quests for " .. tostring(pMeta.name))
+end
+
+local p = ns.State.GetPlayerInfo()
+assert(p.professions and p.professions.activeCount == 5, "Expected 5 auto-detected professions, got " .. tostring(p.professions and p.professions.activeCount))
+assert(ns.Professions.HasProfession(p.professions, 164) == true, "Expected Blacksmithing detected")
+assert(ns.Professions.HasProfession(p.professions, 186) == true, "Expected Mining detected")
+assert(ns.Professions.HasProfession(p.professions, 185) == true, "Expected Cooking detected")
+assert(ns.Professions.HasProfession(p.professions, 129) == true, "Expected First Aid detected")
+assert(ns.Professions.HasProfession(p.professions, 356) == true, "Expected Fishing detected")
+assert(ns.Professions.HasProfession(p.professions, 171) == false, "Expected Alchemy absent")
+assert((p.profMask or 0) > 0, "Expected non-zero profMask")
+
+-- Verify requiredSkill unblocking/gating across non-LW/Skinning professions at Lv 55
+assert(ns.State.GetQuestBlockReason(1578, "ACCEPT", p, nil, nil, {{ consultQuestie = false }}) == nil, "BS quest 1578 should be unblocked")
+assert(ns.State.GetQuestBlockReason(86776, "ACCEPT", p, nil, nil, {{ consultQuestie = false }}) == nil, "Mining quest 86776 should be unblocked")
+assert(ns.State.GetQuestBlockReason(4083, "ACCEPT", p, nil, nil, {{ consultQuestie = false, skipDungeons = false, skipEliteSolo = false }}) == nil, "BRD Mining quest 4083 should be unblocked when dungeons enabled")
+assert(ns.State.GetQuestBlockReason(90, "ACCEPT", p, nil, nil, {{ consultQuestie = false }}) == nil, "Cooking quest 90 should be unblocked")
+assert(ns.State.GetQuestBlockReason(6624, "ACCEPT", p, nil, nil, {{ consultQuestie = false }}) == nil, "First Aid quest 6624 should be unblocked")
+assert(ns.State.GetQuestBlockReason(6607, "ACCEPT", p, nil, nil, {{ consultQuestie = false }}) == nil, "Fishing quest 6607 should be unblocked")
+assert(ns.State.GetQuestBlockReason(1581, "ACCEPT", p, nil, nil, {{ consultQuestie = false }}) == "wrong_profession", "Alchemy quest 1581 should report wrong_profession")
+assert(ns.State.GetQuestBlockReason(1582, "ACCEPT", p, nil, nil, {{ consultQuestie = false }}) == "missing_profession", "LW quest 1582 should still report missing_profession for backwards compatibility")
+
+-- Raise Blacksmithing minSkill test: Gnome Engineering (3630 req 200) vs manual selection without rank
+assert(ns.Professions.SetProfession(171, true) == true, "Manual SetProfession(171) failed")
+local pManual = ns.State.GetPlayerInfo()
+assert(ns.Professions.HasProfession(pManual.professions, 171) == true, "Manual Alchemy should be active")
+-- Note: quest 1581 requires rank 20 and player has no Alchemy skill line trained -> skill_rank_too_low when manually selected without skill rank!
+-- While Alchemy quest without rank requirement (or with trained rank 50) unblocks cleanly:
+local codeNoSkill = ns.State.GetQuestBlockReason(866, "ACCEPT", pManual, nil, nil, {{ consultQuestie = false }})
+assert(codeNoSkill == "wrong_profession", "Unselected Herbalism 866 still wrong_profession")
+ns.Professions.SetProfession(182, true) -- Herbalism req minSkill=1
+local pWithHerb = ns.State.GetPlayerInfo()
+assert(ns.State.GetQuestBlockReason(866, "ACCEPT", pWithHerb, nil, nil, {{ consultQuestie = false }}) == nil, "Selected Herbalism 866 (minSkill 1) should unblock")
+
+-- Slash command multi-selection + Special Rewards 'professions' filter + Scorer boost + lazy UI picker
+assert(Mock.RunSlash("/fqp", "prof herb alch tailor ench eng") == true, "/fqp prof multi-select slash failed")
+local pSlash = ns.State.GetPlayerInfo()
+for _, sid in ipairs({{ 182, 171, 197, 333, 202 }}) do
+    assert(ns.Professions.HasProfession(pSlash.professions, sid) == true, "Expected slash-selected profession " .. tostring(sid))
+end
+assert(ns.Professions.HasProfession(pSlash.professions, 164) == false, "Blacksmithing should be cleared after '/fqp prof herb alch tailor ench eng'")
+assert(ns.State.GetQuestBlockReason(92910, "ACCEPT", pSlash, nil, nil, {{ consultQuestie = false }}) == nil, "Selected Engineering 92910 should unblock")
+assert(ns.State.GetQuestBlockReason(91753, "ACCEPT", pSlash, nil, nil, {{ consultQuestie = false }}) == nil, "Selected Enchanting 91753 should unblock")
+local pTailorRank = {{ level = 55, faction = "Alliance", raceId = 1, classId = 2, professions = {{ activeSkills = {{ [197] = true }}, skills = {{ [197] = 240 }}, profMask = 256, profRankSig = 240 }} }}
+assert(ns.State.GetQuestBlockReason(3379, "ACCEPT", pTailorRank, nil, nil, {{ consultQuestie = false }}) == nil, "Tailoring 3379 at rank 240 should unblock")
+
+local profRewards = ns.Scorer.GetSpecialRewards(pSlash, "professions", 25, true)
+assert(type(profRewards) == "table" and #profRewards > 0, "Expected Special Rewards 'professions' results")
+local sawProfBadge = false
+for _, rw in ipairs(profRewards) do
+    if rw.profBadge and rw.profSkillId then
+        sawProfBadge = true
+        break
+    end
+end
+assert(sawProfBadge, "Expected profBadge & profSkillId on 'professions' special rewards")
+
+-- ScoreQuestForPlayer gives higher boost when prioritize ON + multiple matching professions
+local qMultiTest = {{
+    id = 999971, name = "Herbal Alchemy Synthesis",
+    side = 1, factionMask = 1, minLevel = 10, questLevel = 20, zoneId = 11,
+    profScores = {{ [182] = 75, [171] = 72 }},
+    profRewards = {{ {{ itemId = 2553, name = "Recipe: Elixir", skillId = 171 }} }},
+}}
+local scorePrioOn, bestSid = ns.Professions.ScoreQuestForPlayer(qMultiTest, pSlash.professions, {{ prioritizeProfessions = true, prioritizeSkinningLW = true }}, {{ skinning = 40 }})
+assert(scorePrioOn > 75 and bestSid ~= nil, "Expected multi-profession synergy boost > 75, got " .. tostring(scorePrioOn))
+
+-- Verify lazy 12-profession picker opens cleanly when clicking 'Profs...' button on Route tab
+ns.Window.ShowTab("route")
+local win = _G.ForeverQuestPathWindow
+local function findButtonWithPrefix(root, prefix, depth)
+    if not root or (depth or 0) > 6 then return nil end
+    if root.label and root.label.GetText and tostring(root.label:GetText()):sub(1, #prefix) == prefix then
+        return root
+    end
+    for _, ch in ipairs(root._children or {{}}) do
+        local hit = findButtonWithPrefix(ch, prefix, (depth or 0) + 1)
+        if hit then return hit end
+    end
+    return nil
+end
+local profPickerBtn = findButtonWithPrefix(win, "Profs")
+assert(profPickerBtn and profPickerBtn:GetScript("OnClick"), "Expected 'Profs' selector button on Route tab")
+profPickerBtn:GetScript("OnClick")(profPickerBtn)
+local picker = _G.ForeverQuestPathProfPicker
+assert(picker and picker:IsShown(), "Expected lazy ForeverQuestPathProfPicker popup to open")
+ns.Professions.SetAutoDetect(true)
+assert(ns.Professions.HasProfession(ns.State.GetPlayerInfo().professions, 186) == true, "Expected auto-detect restore Mining (186)")
+
+assert(#Mock.errors == 0, "Unexpected Lua errors in multi-profession test: " .. table.concat(Mock.errors, "; "))
+print("MULTI_PROF_OK rewards=" .. tostring(#profRewards))
+"""
+        rc, out, err = _run_luajit(lua_script)
+        self.assertEqual(rc, 0, f"Multi-profession test failed:\nSTDOUT: {out}\nSTDERR: {err}")
+        self.assertIn("MULTI_PROF_OK", out)
+
+    def test_journey_stats_tracking_and_stats_tab_ui(self) -> None:
+        lua_script = f"""
+local Mock = dofile({str(WOW_MOCK_LUA)!r})
+Mock.Reset({{ tomtom = true, openmap = true }})
+Mock.SetCharacter({{
+    name = "Trailblazer", realm = "Forever", level = 24,
+    raceName = "Gnome", raceFile = "Gnome", raceId = 7,
+    className = "Rogue", classFile = "ROGUE", classId = 4,
+    faction = "Alliance", mapId = 1437, x = 0.100, y = 0.500, money = 50000,
+    totalTimePlayed = 10800, levelTimePlayed = 1800,
+}})
+-- Put Wetlands turn-in quest in log so TurnInQuest tracks quest XP cleanly
+Mock.AcceptQuest(472, "Fall of Dun Modr", 25, true)
+
+local addonName, ns = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonName)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+
+-- 1. Indoor jitter (<6 yds) must be ignored
+Mock.SetPlayerPosition(1437, 0.1005, 0.5005, "Menethil Harbor", true)
+Mock.AdvanceTimers(3.0)
+local vmJitter = ns.Stats.GetViewModel("levels")
+assert((vmJitter.totalDistanceYards or 0) < 0.01, "Expected <6yd jitter ignored, got " .. tostring(vmJitter.totalDistanceYards))
+
+-- 2. Ground movement in Wetlands (~150-300 yards)
+Mock.SetPlayerPosition(1437, 0.180, 0.500, "Wetlands Road", true)
+Mock.AdvanceTimers(6.0)
+local vmMove1 = ns.Stats.GetViewModel("levels")
+assert(vmMove1.totalDistanceYards >= 100 and vmMove1.totalDistanceYards <= 450,
+    "Expected Wetlands ground distance in [100,450] yds, got " .. tostring(vmMove1.totalDistanceYards))
+local savedDistAfterMove1 = vmMove1.totalDistanceYards
+
+-- 3. Dead / Ghost movement & Taxi flight must NOT add ground distance; taxi must track flightCount & flightTimeSec
+Mock.SetDead(true, false, true)
+Mock.SetPlayerPosition(1437, 0.260, 0.500, "Wetlands Graveyard", true)
+Mock.AdvanceTimers(3.0)
+Mock.Resurrect(1437, 0.180, 0.500, "Wetlands Road")
+local vmDeadCheck = ns.Stats.GetViewModel("levels")
+assert(vmDeadCheck.deaths == 1, "Expected 1 recorded death, got " .. tostring(vmDeadCheck.deaths))
+assert(math.abs(vmDeadCheck.totalDistanceYards - savedDistAfterMove1) < 1e-6,
+    "Dead/ghost travel must not inflate ground distance")
+
+Mock.SetOnTaxi(true)
+Mock.AdvanceTimers(6.0)
+Mock.SetPlayerPosition(1437, 0.250, 0.550, "Flight Path", false)
+Mock.AdvanceTimers(4.5)
+Mock.SetOnTaxi(false)
+local vmTaxi = ns.Stats.GetViewModel("levels")
+assert(vmTaxi.flightCount == 1, "Expected 1 taxi flight recorded, got " .. tostring(vmTaxi.flightCount))
+assert(vmTaxi.flightTimeSec >= 6.0, "Expected taxi flightTimeSec >= 6s, got " .. tostring(vmTaxi.flightTimeSec))
+
+-- 4. Large >=900yd instant jump (e.g. Hearthstone across Loch Modan) counts hearthCount, not ground distance
+Mock.SetPlayerPosition(1432, 0.800, 0.800, "Loch Modan Far", true)
+Mock.AdvanceTimers(3.0)
+local vmJump = ns.Stats.GetViewModel("levels")
+local preHearthDist = vmJump.totalDistanceYards
+Mock.SetPlayerPosition(1432, 0.100, 0.100, "Thelsamar", true)
+Mock.AdvanceTimers(3.0)
+local vmHearth = ns.Stats.GetViewModel("levels")
+assert(vmHearth.hearthCount >= 1, "Expected >=900yd teleport/hearth jump counted, got " .. tostring(vmHearth.hearthCount))
+assert(math.abs(vmHearth.totalDistanceYards - preHearthDist) < 1e-6, "Teleport/hearth jump must not inflate ground distance")
+
+-- 5. Quest XP vs Combat XP split, Money tracking, and Level Up time-per-level
+Mock.AdvanceTimers(60.0)
+Mock.TurnInQuest(472, 2400, 3500)
+Mock.GainXP(600) -- combat/explore XP
+Mock.AddMoney(1500) -- looted coin
+Mock.AddMoney(-1000) -- repair / vendor spend
+Mock.LevelUp(25)
+Mock.AdvanceTimers(45.0)
+Mock.GainXP(900)
+
+local vm2 = ns.Stats.GetViewModel("levels")
+assert(vm2.totalXpFromQuests == 2400, "Expected quest XP = 2400, got " .. tostring(vm2.totalXpFromQuests))
+assert(vm2.otherXpTotal == 1500, "Expected combat/other XP = 1500 (600 + 900), got " .. tostring(vm2.otherXpTotal))
+assert(vm2.totalXpGained == 3900, "Expected total XP = 3900, got " .. tostring(vm2.totalXpGained))
+assert(vm2.questsCompleted == 1, "Expected 1 quest completed")
+assert(vm2.levelsGained == 1, "Expected 1 level gained")
+assert(vm2.completedLevelsCount >= 1 and vm2.avgTimePerLevelSec > 0, "Expected completed Lv 24 duration in avgTimePerLevelSec")
+assert(vm2.avgTimePerLevelSource == "completed", "Expected avgTimePerLevelSource == 'completed', got " .. tostring(vm2.avgTimePerLevelSource))
+assert(vm2.avgXpPerHour > 0 and vm2.sessionXpPerHour > 0, "Expected positive XP/hr")
+assert(vm2.etaNextLevelSec and vm2.etaNextLevelSec > 0 and vm2.etaLevel60Sec and vm2.etaLevel60Sec > vm2.etaNextLevelSec,
+    "Expected positive ETA next level < ETA level 60")
+assert(vm2.goldEarnedCopper == 5000 and vm2.goldSpentCopper == 1000 and vm2.netCopper == 4000,
+    string.format("Expected earned=5000 spent=1000 net=4000, got %d/%d/%d", vm2.goldEarnedCopper, vm2.goldSpentCopper, vm2.netCopper))
+
+-- 6. /played sync & UI Journey Stats tab modes with zero allocations
+ns.Window.ShowTab("stats")
+local win = _G.ForeverQuestPathWindow
+local snap = ns.Window.GetSnapshot()
+assert(snap.activeTab == "stats" and snap.stats and #snap.stats.rows >= 2, "Expected Lv 24 and Lv 25 rows in stats snapshot")
+
+Mock.ResetMetrics()
+ns.Stats.RequestTimePlayedSync()
+local vmPlayed = ns.Stats.GetViewModel("milestones")
+assert(vmPlayed.totalTimePlayedSec and vmPlayed.totalTimePlayedSec >= 10800, "Expected /played synced >= 10800")
+assert(vmPlayed.levelTimePlayedSec and vmPlayed.levelTimePlayedSec >= 1800, "Expected level /played >= 1800")
+local vmZones = ns.Stats.GetViewModel("zones")
+assert(#vmZones.rows >= 2, "Expected >= 2 zone rows (Wetlands + Loch Modan)")
+for _, modeKey in ipairs({{ "zones", "milestones", "levels" }}) do
+    local labelMap = {{ zones = "By Zone", milestones = "Milestones", levels = "Per-Level" }}
+    local target = labelMap[modeKey]
+    local function findBtn(root, t, d)
+        if not root or (d or 0) > 6 then return nil end
+        if root.label and root.label.GetText and root.label:GetText() == t then return root end
+        for _, ch in ipairs(root._children or {{}}) do
+            local h = findBtn(ch, t, (d or 0) + 1)
+            if h then return h end
+        end
+    end
+    local b = findBtn(win, target)
+    assert(b and b:GetScript("OnClick"), "Missing button " .. target)
+    b:GetScript("OnClick")(b)
+end
+local mStats = Mock.GetMetrics()
+assert(mStats.createFrameCalls == 0 and mStats.createRegionCalls == 0, "Stats UI interactions must allocate 0 frames/regions")
+
+-- 7. Slash command + Persistence across reload + ResetSession vs ResetAll
+assert(Mock.RunSlash("/fqp", "stats") == true, "/fqp stats slash failed")
+local savedCharDB = _G.ForeverQuestPathCharDB
+local savedAcctDB = _G.ForeverQuestPathDB
+
+Mock.Reset()
+Mock.SetCharacter({{ name = "Trailblazer", realm = "Forever", level = 25, mapId = 1432, x = 0.100, y = 0.100, money = 54000 }})
+local addon2, ns2 = Mock.LoadAddonTOC({str(TOC_PATH)!r}, {{
+    savedVars = {{ ForeverQuestPathDB = savedAcctDB }},
+    savedVarsPerChar = {{ ForeverQuestPathCharDB = savedCharDB }},
+}})
+Mock.FireEvent("ADDON_LOADED", addon2)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+
+local vmReload = ns2.Stats.GetViewModel("levels")
+assert(vmReload.totalXpGained == 3900 and vmReload.questsCompleted == 1, "Expected persistent journey stats across /reload")
+ns2.Stats.ResetSession()
+local vmAfterSessReset = ns2.Stats.GetViewModel("levels")
+assert(vmAfterSessReset.sessionXpGained == 0 and vmAfterSessReset.totalXpGained == 3900, "ResetSession must preserve journey totals")
+ns2.Stats.ResetAll()
+local vmAfterAllReset = ns2.Stats.GetViewModel("levels")
+assert(vmAfterAllReset.totalXpGained == 0 and vmAfterAllReset.questsCompleted == 0 and vmAfterAllReset.totalDistanceYards == 0,
+    "ResetAll must zero cumulative stats")
+
+assert(#Mock.errors == 0, "Unexpected Lua errors in journey stats test: " .. table.concat(Mock.errors, "; "))
+print(string.format("JOURNEY_STATS_OK dist=%.1fyd xpHr=%.0f avgLvl=%.1fs", vm2.totalDistanceYards, vm2.avgXpPerHour, vm2.avgTimePerLevelSec))
+"""
+        rc, out, err = _run_luajit(lua_script)
+        self.assertEqual(rc, 0, f"Journey stats test failed:\nSTDOUT: {out}\nSTDERR: {err}")
+        self.assertIn("JOURNEY_STATS_OK", out)
 
     def test_deployed_addon_matches_source_directory(self) -> None:
         self.assertTrue(ADDON_DST.exists(), f"Installed addon directory missing: {ADDON_DST}")
