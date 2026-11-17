@@ -56,9 +56,9 @@
 --      decCache.byStepBadge step clone reuse and epoch/offset-span stamped
 --      zero-alloc dynamic step decoration, zero-alloc friend-meetup off-route
 --      chain pivoting with scratch candidate selection & fPairDist caching,
---      pInfo/playerHint forwarding into GetCurrentStep + in-place cache wrapper
---      reuse, class-quest injection, deviation/skip handling, step history, and
---      Nav routing.
+--      pInfo/playerHint forwarding into GetCurrentStep + STATE_UPDATED +
+--      in-place cache wrapper reuse, O(1) GetBlockedStepCount(), class-quest
+--      injection, deviation/skip handling, step history, and Nav routing.
 --   4. Enforces strict live eligibility guards (factionMask, raceMask, classMask,
 --      memoized IsEligibleForPlayer, minLevel, prereqIds, configurable
 --      questLevel <= playerLevel + maxLevelOffset cap defaulting to +2 with
@@ -2280,6 +2280,10 @@ function State.GetBlockedSteps()
         blockedStepsDirty = false
     end
     return blockedStepsLog
+end
+
+function State.GetBlockedStepCount()
+    return blockedStepsCount
 end
 
 local function IsRequiredSkillBlocked(reqSkill, prof, reasonless)
@@ -10423,7 +10427,7 @@ function State.Refresh(reason, arg1, arg2)
     local stepChanged = (sig ~= lastStepSignature)
     lastStepSignature = sig
 
-    ns.FireCallback("STATE_UPDATED", reason, step, meta)
+    ns.FireCallback("STATE_UPDATED", reason, step, meta, pInfo)
     if stepChanged then
         ns.FireCallback("STEP_CHANGED", step, meta, reason)
     end

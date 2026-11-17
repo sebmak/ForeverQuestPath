@@ -2,7 +2,7 @@
 ## Title: Forever Quest Path
 ## Notes: Optimal 1-60 quest routing, terrain-aware pathfinding, dungeon unlock tracking, and reward balancing for all races and classes on WoW Forever.
 ## Author: sebmak
-## Version: 1.6.1
+## Version: 1.6.2
 ## Category: Quests
 ## X-Category: Quests
 ## Website: https://github.com/sebmak/ForeverQuestPath
@@ -10,7 +10,7 @@
 ## X-License: MIT
 ## DefaultState: enabled
 ## LoadOnDemand: 0
-## IconTexture: Interface\AddOns\ForeverQuestPath\Media\Icon.png
+## IconTexture: Interface\AddOns\ForeverQuestPath\Media\Icon
 ## AddonCompartmentFunc: ForeverQuestPath_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: ForeverQuestPath_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: ForeverQuestPath_OnAddonCompartmentLeave

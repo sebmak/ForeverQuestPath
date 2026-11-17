@@ -1,7 +1,8 @@
 --------------------------------------------------------------------------------
 -- UI/HUD.lua
 -- Rules:
---   1. Compact, movable HUD Tracker displaying the Next Step card (action,
+--   1. Compact, movable HUD Tracker displaying the bundled addon header icon
+--      (ns.ICON_TEXTURE) and Next Step card (action,
 --      quest/target, NPC & coords / "Inside Dungeon", travel note, XP/Gold/
 --      Bag/<Class> BiS/Skin/LW/Elite/Dungeon/In Dungeon/Ready Turn-In/Friend
 --      Chain/GPS Reorder/Chain Progress badges, "Why this step?"), active MaxLv
@@ -12,9 +13,10 @@
 --   3. Shows full quest info/instructions tooltips on hover over the Next Step
 --      card and Upcoming Steps (via UI/QuestInfo.lua), opens the Quest Log to
 --      the quest on Left-Click, and pins the step waypoint on Right-Click.
---   4. Separates view-model computation (HUD.GetViewModel, forwarding
---      player into State.GetCurrentStep) from frame updates so both in-game
---      rendering and headless Lua tests remain deterministic.
+--   4. Separates view-model computation (HUD.GetViewModel, reusing optional
+--      STATE_UPDATED player/step/meta hints and skipping hidden HUD refreshes)
+--      from frame updates so both in-game rendering and headless Lua tests
+--      remain deterministic.
 --   5. Enriches the current step with live Nav shortest-path ETA & next-hop
 --      gate/pass/transport summary without mutating static GeneratedData steps
 --      (skipping live Nav hop resolution while frozen on taxi or dead/ghost).
@@ -176,9 +178,14 @@ local function FormatBadges(step, player)
     return table.concat(parts, "  ")
 end
 
-function HUD.GetViewModel()
-    local player = ns.State.GetPlayerInfo()
-    local step, meta = ns.State.GetCurrentStep(player)
+function HUD.GetViewModel(playerHint, stepHint, metaHint)
+    local player = playerHint or ns.State.GetPlayerInfo()
+    local step, meta
+    if stepHint ~= nil or metaHint ~= nil then
+        step, meta = stepHint, metaHint
+    else
+        step, meta = ns.State.GetCurrentStep(player)
+    end
     local upcoming = ns.State.GetUpcomingSteps(UPCOMING_COUNT)
     local deviation = ns.State.GetDeviationStatus()
 
@@ -392,8 +399,16 @@ local function CreateHUDFrame()
     ApplyBackdrop(header, 0.10, 0.13, 0.18, 1, 0.18, 0.24, 0.30, 1)
     frame.header = header
 
+    local headerIcon = header:CreateTexture(nil, "ARTWORK")
+    headerIcon:SetSize(16, 16)
+    headerIcon:SetPoint("LEFT", 6, 0)
+    if ns.ICON_TEXTURE and headerIcon.SetTexture then
+        headerIcon:SetTexture(ns.ICON_TEXTURE)
+    end
+    frame.headerIcon = headerIcon
+
     local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    title:SetPoint("LEFT", 8, 0)
+    title:SetPoint("LEFT", headerIcon, "RIGHT", 5, 0)
     title:SetText("|cff33d9ffForeverQuestPath|r")
 
     local closeBtn = MakeButton(header, "x", 18, 18)
@@ -617,8 +632,8 @@ local function CreateHUDFrame()
     UpdateLockVisual()
 end
 
-function HUD.Refresh()
-    local vm = HUD.GetViewModel()
+function HUD.Refresh(playerHint, stepHint, metaHint)
+    local vm = HUD.GetViewModel(playerHint, stepHint, metaHint)
     currentStep = vm and vm.current and vm.current.step or nil
     if not frame then return vm end
 
@@ -708,7 +723,8 @@ function HUD.Initialize()
             frame:Show()
         end
     end
-    ns.RegisterCallback("STATE_UPDATED", function()
-        HUD.Refresh()
+    ns.RegisterCallback("STATE_UPDATED", function(_, step, meta, pInfo)
+        if frame and not frame:IsShown() then return end
+        HUD.Refresh(pInfo, step, meta)
     end)
 end

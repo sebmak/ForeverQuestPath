@@ -20,9 +20,10 @@
 --      dungeonUnlockMemo (preserved across non-static InvalidateCaches), reusing
 --      pooled scorerScratch (metricsPool, rawCandidates, seenCand, readyPoints,
 --      readyExtras, peerCountByQid, recentChainSet, simChainSet,
---      activeChainSet, readyCtx), using maxCandidates = 1 + fromLiveSeed
---      IsIndexedEligible fast path + O(N) top-1 selection on lookahead steps,
---      and memoizing read views per generation plus step-1 isLiveState /
+--      activeChainSet, readyCtx, lookaheadSeeds, seenNew, vPlayer), using
+--      maxCandidates = 1 + fromLiveSeed IsIndexedEligible fast path + O(N)
+--      top-1 selection and single-pass per-level priorityList gating on
+--      lookahead steps, and memoizing read views per generation plus step-1
 --      seedQids / dynamicStepsCache with metatable vCompleted.
 --   3. Ready turn-ins in active log are never blocked by eligibility, exclusive
 --      lists, elite-solo gating, dungeon-skip gating, or level offset checks;
@@ -81,10 +82,10 @@ local CLASS_FILE_TO_BIT = {
 
 local LIVE_NAV_OPTS = { maxResults = 75, maxSec = 2400.0, keepFullField = true }
 local LIVE_NAV_OPTS_NO_HEARTH = { maxResults = 75, maxSec = 2400.0, keepFullField = true, allowHearth = false }
-local LOOKAHEAD_NAV_OPTS = { maxResults = 40, maxSec = 1800.0, keepFullField = false, skipIndexRebuild = true }
-local LOOKAHEAD_NAV_OPTS_NO_HEARTH = { maxResults = 40, maxSec = 1800.0, keepFullField = false, allowHearth = false, skipIndexRebuild = true }
-local LOOKAHEAD_NEW_ZONE_OPTS = { maxResults = 75, maxSec = 2400.0, keepFullField = true, skipIndexRebuild = true }
-local LOOKAHEAD_NEW_ZONE_OPTS_NO_HEARTH = { maxResults = 75, maxSec = 2400.0, keepFullField = true, allowHearth = false, skipIndexRebuild = true }
+local LOOKAHEAD_NAV_OPTS = { maxResults = 36, maxSec = 1800.0, keepFullField = false, skipIndexRebuild = true }
+local LOOKAHEAD_NAV_OPTS_NO_HEARTH = { maxResults = 36, maxSec = 1800.0, keepFullField = false, allowHearth = false, skipIndexRebuild = true }
+local LOOKAHEAD_NEW_ZONE_OPTS = { maxResults = 48, maxSec = 2000.0, keepFullField = false, skipIndexRebuild = true }
+local LOOKAHEAD_NEW_ZONE_OPTS_NO_HEARTH = { maxResults = 48, maxSec = 2000.0, keepFullField = false, allowHearth = false, skipIndexRebuild = true }
 local FAST_BLOCK_OPTS = { consultQuestie = false, checkIsDoable = false, useBulkCompletion = true, reasonless = true }
 local LIVE_BLOCK_OPTS = { consultQuestie = true, checkIsDoable = true, useBulkCompletion = true, reasonless = true }
 local UNMOUNTED_NAV_OPTS = { unmountedOnly = true }
@@ -131,6 +132,9 @@ local scorerScratch = {
     simChainSet = {},
     activeChainSet = {},
     readyCtx = {},
+    lookaheadSeeds = {},
+    seenNew = {},
+    vPlayer = {},
 }
 
 local wipeOk, tableClearFn = pcall(require, "table.clear")
@@ -281,8 +285,16 @@ function Scorer.InvalidateCaches(clearStatic)
         cachedDungeonDataRef = nil
         dungeonUnlockMemo = {}
     end
-    dungeonsViewCache = {}
-    rewardsViewCache = {}
+    if next(dungeonsViewCache) ~= nil then
+        for k in pairs(dungeonsViewCache) do
+            dungeonsViewCache[k] = nil
+        end
+    end
+    if next(rewardsViewCache) ~= nil then
+        for k in pairs(rewardsViewCache) do
+            rewardsViewCache[k] = nil
+        end
+    end
     rankLiveCache.valid = false
     rankLiveCache.key = nil
     rankLiveCache.out = nil
@@ -512,7 +524,7 @@ local function ComputeCandidateMetrics(q, action, vState, weights, toggles, data
     local navOpts = Scorer._navStepOpts
     navOpts.questId = q.id
     navOpts.role = (action == "TURN_IN" and "t") or (action == "COMPLETE" and "o") or "s"
-    if (vState.hearthAvailable == false) or (isCrossContinent and action ~= "TURN_IN") then
+    if vState.hearthAvailable == false then
         navOpts.allowHearth = false
     else
         navOpts.allowHearth = nil
@@ -521,6 +533,9 @@ local function ComputeCandidateMetrics(q, action, vState, weights, toggles, data
         vState.zoneId, vState.x, vState.y,
         targetZoneId, targetX, targetY, data, vState.player, navOpts
     )
+    if isCrossContinent and action ~= "TURN_IN" and travelMins < 8.5 then
+        travelMins = 8.5
+    end
     local estMins = travelMins + (action == "COMPLETE" and (q.isGroup and 10 or 5) or 0.5)
 
     -- XP component (0..100)
@@ -881,7 +896,7 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             tostring(vp.classFile or "ROGUE"),
             hReady,
             hasQdb,
-            #((ns.State.GetBlockedSteps and ns.State.GetBlockedSteps()) or {}),
+            (ns.State.GetBlockedStepCount and ns.State.GetBlockedStepCount()) or #((ns.State.GetBlockedSteps and ns.State.GetBlockedSteps()) or {}),
             rankSkipElite and 1 or 0,
             rankSkipDungeons and 1 or 0
         ) .. "|" .. readySig .. "|" .. locSig
@@ -912,29 +927,32 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
         if vState.level == vState.player.level then
             vPlayer = vState.player
         else
-            vPlayer = {
-                level = vState.level,
-                faction = vState.player.faction,
-                raceName = vState.player.raceName,
-                raceFile = vState.player.raceFile,
-                raceId = vState.player.raceId,
-                raceBitmask = vState.player.raceBitmask,
-                className = vState.player.className,
-                classFile = vState.player.classFile,
-                classId = vState.player.classId,
-                classBitmask = vState.player.classBitmask,
-                inGroup = vState.player.inGroup,
-                hasSkinning = vState.player.hasSkinning,
-                hasLeatherworking = vState.player.hasLeatherworking,
-                skinningRank = vState.player.skinningRank,
-                leatherworkingRank = vState.player.leatherworkingRank,
-                professions = vState.player.professions,
-                bindLocation = vState.player.bindLocation,
-                hearthZoneId = vState.player.hearthZoneId,
-            }
+            local vp = scorerScratch.vPlayer
+            local sp = vState.player
+            vp.level = vState.level
+            vp.faction = sp.faction
+            vp.raceName = sp.raceName
+            vp.raceFile = sp.raceFile
+            vp.raceId = sp.raceId
+            vp.raceBitmask = sp.raceBitmask
+            vp.className = sp.className
+            vp.classFile = sp.classFile
+            vp.classId = sp.classId
+            vp.classBitmask = sp.classBitmask
+            vp.inGroup = sp.inGroup
+            vp.hasSkinning = sp.hasSkinning
+            vp.hasLeatherworking = sp.hasLeatherworking
+            vp.skinningRank = sp.skinningRank
+            vp.leatherworkingRank = sp.leatherworkingRank
+            vp.professions = sp.professions
+            vp.bindLocation = sp.bindLocation
+            vp.hearthZoneId = sp.hearthZoneId
+            vPlayer = vp
         end
     else
-        vPlayer = { level = vState.level }
+        local vp = WipeMap(scorerScratch.vPlayer)
+        vp.level = vState.level
+        vPlayer = vp
     end
 
     local fastOpts = FAST_BLOCK_OPTS
@@ -1201,7 +1219,11 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
     if navAvail and vState.zoneId and vState.x and vState.y and data.quests then
         local navPlayer = isLookahead and (vState.player or vPlayer) or vPlayer
         local noHearth = (vState.hearthAvailable == false)
-        local zoneChanged = isLookahead and (vState.seedZoneId ~= nil and vState.zoneId ~= vState.seedZoneId) or false
+        local zoneChanged = isLookahead
+            and ((vState.stepCounter or 1) <= 6)
+            and ((vState.zoneRefreshes or 0) < 2)
+            and (vState.seedZoneId ~= nil and vState.zoneId ~= vState.seedZoneId)
+            or false
         local navOpts
         if isLookahead then
             if zoneChanged then
@@ -1244,7 +1266,9 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             for i = 1, #seeds do
                 EvalOnce(seeds[i])
             end
-            if zoneChanged or (vState.player and vState.level ~= vState.player.level) then
+            local levelBumped = (vState.player and vState.level ~= vState.player.level and vState.lastPriorityLevel ~= vState.level)
+            if zoneChanged or levelBumped then
+                vState.lastPriorityLevel = vState.level
                 local priorityList = ns.Nav.GetPriorityAndUnanchoredQids()
                 for i = 1, #(priorityList or {}) do
                     EvalOnce(priorityList[i])
@@ -1273,22 +1297,31 @@ function Scorer.RankAvailableCandidates(vState, weights, toggles, data)
             seenList[i] = nil
         end
         if zoneChanged then
-            local newSeeds = {}
-            local seenNew = {}
+            local newSeeds = scorerScratch.lookaheadSeeds
+            local seenNew = scorerScratch.seenNew
+            local nCount = 0
             for i = 1, (poolCount or 0) do
                 local rec = pool[i]
                 local pqid = rec and rec.qid
                 local pq = pqid and data.quests[pqid]
                 if pq and not pq.isSyntheticReady and not seenNew[pqid] then
                     seenNew[pqid] = true
-                    newSeeds[#newSeeds + 1] = pqid
-                    if #newSeeds >= 36 then
+                    nCount = nCount + 1
+                    newSeeds[nCount] = pqid
+                    if nCount >= 36 then
                         break
                     end
                 end
             end
+            for i = nCount + 1, #newSeeds do
+                newSeeds[i] = nil
+            end
+            for i = 1, nCount do
+                seenNew[newSeeds[i]] = nil
+            end
             vState.seedQids = newSeeds
             vState.seedZoneId = vState.zoneId
+            vState.zoneRefreshes = (vState.zoneRefreshes or 0) + 1
         end
     else
         for qid, q in pairs(data.quests or {}) do
@@ -1477,7 +1510,8 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
     local locSig = ns.State and ns.State.GetLocationPlanSignature and ns.State.GetLocationPlanSignature() or ""
     local hReady = (ns.Nav and ns.Nav.IsHearthReady and ns.Nav.IsHearthReady()) and 1 or 0
     local hasQdb = (_G.QuestieDB ~= nil or _G.QuestieLoader ~= nil) and 1 or 0
-    local blkCount = #((ns.State and ns.State.GetBlockedSteps and ns.State.GetBlockedSteps()) or {})
+    local blkCount = (ns.State and ns.State.GetBlockedStepCount and ns.State.GetBlockedStepCount())
+        or #((ns.State and ns.State.GetBlockedSteps and ns.State.GetBlockedSteps()) or {})
     local prof = player and player.professions
     local skipEliteNow = (ns.State and ns.State.ShouldSkipEliteNow) and ns.State.ShouldSkipEliteNow(player, toggles) or (toggles.skipEliteSolo ~= false and not (player and player.inGroup))
     local skipDungeonsNow = (ns.State and ns.State.ShouldSkipDungeonsNow) and ns.State.ShouldSkipDungeonsNow(toggles) or (toggles.skipDungeons ~= false)
@@ -1590,6 +1624,7 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
     local vState = {
         player = player,
         level = player.level or 24,
+        lastPriorityLevel = player.level or 24,
         xpPct = player.xpPct or 0,
         zoneId = player.zoneId or 11,
         zoneName = player.zoneName or "Wetlands",
@@ -1607,6 +1642,7 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
         hearthAvailable = (hReady == 1),
         useStickyCommit = useStickyCommit,
         seedZoneId = nil,
+        zoneRefreshes = 0,
     }
 
     local steps = {}
@@ -1667,26 +1703,24 @@ function Scorer.GetDynamicSteps(player, weights, toggles, count)
         cQids[commitCount] = qid
         cActs[commitCount] = pick.rawAction
 
-        if vState.hearthAvailable and vState.zoneId and pick.step.zoneId and ns.Nav and ns.Nav.QueryPath then
-            Scorer._hearthCheckOpts = Scorer._hearthCheckOpts or {}
-            local hOpts = Scorer._hearthCheckOpts
-            hOpts.questId = qid
-            hOpts.role = (pick.rawAction == "TURN_IN" and "t") or (pick.rawAction == "COMPLETE" and "o") or "s"
+        if i <= 6 and vState.hearthAvailable and vState.zoneId and pick.step.zoneId and ns.Nav and ns.Nav.QueryPath then
             local rFromStep = data.zones and vState.zoneId and data.zones[vState.zoneId] and data.zones[vState.zoneId].region
             local rToStep = data.zones and pick.step.zoneId and data.zones[pick.step.zoneId] and data.zones[pick.step.zoneId].region
             local stepCrossCont = (rFromStep ~= nil and rToStep ~= nil and rFromStep ~= rToStep)
-            if stepCrossCont and pick.rawAction ~= "TURN_IN" then
-                hOpts.allowHearth = false
-            else
+            if not (stepCrossCont and pick.rawAction ~= "TURN_IN") then
+                Scorer._hearthCheckOpts = Scorer._hearthCheckOpts or {}
+                local hOpts = Scorer._hearthCheckOpts
+                hOpts.questId = qid
+                hOpts.role = (pick.rawAction == "TURN_IN" and "t") or (pick.rawAction == "COMPLETE" and "o") or "s"
                 hOpts.allowHearth = nil
-            end
-            local pathRes = ns.Nav.QueryPath(
-                vState.zoneId, vState.x, vState.y,
-                pick.step.zoneId, pick.step.x or 50, pick.step.y or 50,
-                vState.player, hOpts
-            )
-            if pathRes and pathRes.usedHearth then
-                vState.hearthAvailable = false
+                local pathRes = ns.Nav.QueryPath(
+                    vState.zoneId, vState.x, vState.y,
+                    pick.step.zoneId, pick.step.x or 50, pick.step.y or 50,
+                    vState.player, hOpts
+                )
+                if pathRes and pathRes.usedHearth then
+                    vState.hearthAvailable = false
+                end
             end
         end
 

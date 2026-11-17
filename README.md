@@ -1,6 +1,10 @@
+<img src=".previews/icon.png" width="76" align="left" alt="ForeverQuestPath Icon" />
+
 # ForeverQuestPath
 
 **ForeverQuestPath** is a WoW Forever (`Interface: 16001`) 1–60 quest routing addon paired with a Python offline dataset pipeline and simulator.
+
+<br clear="left" />
 
 ## Features
 
@@ -28,7 +32,7 @@ You can install and auto-update **ForeverQuestPath** for **WoW Forever (`Interfa
 2. Go to **Get Addons -> Install from URL**.
 3. Paste the GitHub repository URL:
    - https://github.com/sebmak/ForeverQuestPath
-4. Click **Import** / **Install** — WowUp reads `release.json`, `ForeverQuestPath-v1.6.1-forever.zip`, and `ForeverQuestPath_Forever.toc` automatically.
+4. Click **Import** and then **Install / Re-install** — WowUp reads `release.json`, `ForeverQuestPath-v1.6.2-forever.zip`, and `ForeverQuestPath_Forever.toc` automatically and replaces any `Unknown` manual local folder (which otherwise shows an `"F"` placeholder).
 
 ---
 
@@ -37,9 +41,9 @@ You can install and auto-update **ForeverQuestPath** for **WoW Forever (`Interfa
 You can download a prebuilt release binary directly without cloning the repo:
 
 1. Download the latest archive:
-   - Direct asset (`v1.6.1`): [`ForeverQuestPath-v1.6.1-forever.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.6.1-forever.zip)
+   - Direct asset (`v1.6.2`): [`ForeverQuestPath-v1.6.2-forever.zip`](https://github.com/sebmak/ForeverQuestPath/releases/latest/download/ForeverQuestPath-v1.6.2-forever.zip)
    - All releases: [`github.com/sebmak/ForeverQuestPath/releases/latest`](https://github.com/sebmak/ForeverQuestPath/releases/latest)
-2. Extract `ForeverQuestPath-v1.6.1-forever.zip` into your WoW Forever AddOns directory:
+2. Extract `ForeverQuestPath-v1.6.2-forever.zip` into your WoW Forever AddOns directory:
    - **macOS:** `/Applications/World of Warcraft/_forever_/Interface/AddOns/`
    - **Windows:** `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\`
 3. Confirm the extracted folder structure contains:

@@ -17,10 +17,11 @@
 --      profile/group, skipEliteSolo, or skipDungeons state) changes -- NEVER on 1.5s
 --      GPS_MOVED ticks or virtual lookahead steps with skipIndexRebuild=true --
 --      on top of zero-GC per-character minLevel buckets (staticLevelBuckets),
---      excluding solo-skipped open-world elite and deferred dungeon "s"/"o"
---      quests while preserving ready turn-ins ("t"), cached nearest-quest pool
---      (nearestCache), and exact settledBoundSec partial single-source field
---      reuse (singleCache).
+--      unlock / attunement quests while excluding solo-skipped open-world elite
+--      and deferred dungeon "s"/"o" quests while preserving ready turn-ins ("t"),
+--      cached nearest-quest pool (nearestCache + 32-slot zero-GC
+--      nearestRingSlots lookahead ring), and exact settledBoundSec partial
+--      single-source field reuse (singleCache).
 --   5. RecordTaxiNodes only invalidates path caches and reports changed=true when
 --      at least one previously unknown flight master is discovered, while
 --      Nav.GetCacheEpoch() exposes a monotonic epoch bumped on every cache clear.
@@ -233,6 +234,12 @@ local nearestCache = {
 local FAST_NAV_BLOCK_OPTS = { consultQuestie = false, checkIsDoable = false, useBulkCompletion = true, reasonless = true }
 local nearestResultsPool = {}
 local nearestCount = 0
+local NEAREST_RING_SIZE = 32
+local nearestRingCursor = 0
+local nearestRingSlots = {}
+for i = 1, NEAREST_RING_SIZE do
+    nearestRingSlots[i] = { valid = false, eligVersion = -1, key = 0, maxSec = 0, count = 0, qids = {}, secs = {} }
+end
 
 -- Preallocated circular path query cache (zero GC per hit or update)
 local pathCacheSlots = {}
@@ -483,6 +490,10 @@ end
 function Nav.InvalidatePathCache()
     ClearPathCache()
     singleCache.valid = false
+    nearestCache.valid = false
+    for i = 1, NEAREST_RING_SIZE do
+        nearestRingSlots[i].valid = false
+    end
 end
 
 function Nav.GetCacheEpoch()
@@ -1879,8 +1890,45 @@ function Nav.FindNearestEligibleQuests(srcZone, srcX, srcY, data, player, opts)
         return nearestResultsPool, nearestCache.outCount
     end
 
+    local canUseRing = (not reqKeepFull) and (not reqSameZone) and (reqRole == nil) and (not reqNoCap)
+    local ringKey = canUseRing and ((((capId * 32768 + srcZone) * 512 + sCellIdx) * 128) + reqMaxResults) or 0
+    if canUseRing then
+        for ri = 1, NEAREST_RING_SIZE do
+            local rSlot = nearestRingSlots[ri]
+            if rSlot.valid and rSlot.eligVersion == eligibleMeta.version and rSlot.key == ringKey and rSlot.maxSec == reqMaxSec then
+                local rc = rSlot.count
+                local rq, rs = rSlot.qids, rSlot.secs
+                for j = 1, rc do
+                    local rec = nearestResultsPool[j]
+                    if not rec then
+                        rec = {}
+                        nearestResultsPool[j] = rec
+                    end
+                    rec.qid = rq[j]
+                    rec.sec = rs[j]
+                end
+                return nearestResultsPool, rc
+            end
+        end
+    end
+
     navStats.floodSolves = navStats.floodSolves + 1
     local outCount = RunSingleSourceFlood(nav, srcZone, srcX, srcY, player, opts, true)
+    if canUseRing and outCount > 0 then
+        nearestRingCursor = (nearestRingCursor % NEAREST_RING_SIZE) + 1
+        local wSlot = nearestRingSlots[nearestRingCursor]
+        wSlot.valid = true
+        wSlot.eligVersion = eligibleMeta.version
+        wSlot.key = ringKey
+        wSlot.maxSec = reqMaxSec
+        wSlot.count = outCount
+        local wq, ws = wSlot.qids, wSlot.secs
+        for j = 1, outCount do
+            local rec = nearestResultsPool[j]
+            wq[j] = rec.qid
+            ws[j] = rec.sec
+        end
+    end
     if outCount == 0 and singleCache.valid == false and sHeapSize == 0 and nearestCount == 0 then
         return nil, 0
     end
@@ -1927,6 +1975,9 @@ function Nav.Reset()
     charStaticMeta.valid = false
     eligibleMeta.valid = false
     nearestCache.valid = false
+    for i = 1, NEAREST_RING_SIZE do
+        nearestRingSlots[i].valid = false
+    end
     singleCache.valid = false
     ClearPathCache()
 end

@@ -20,7 +20,8 @@
 --      /fqp gps stats telemetry, quest hover info tooltips & click-to-open
 --      Quest Log (via UI/QuestInfo.lua), anti-shuffling Scorer/State routing
 --      stability (continent/zone cohesion, single-use virtual hearthstone
---      lookahead, and target hysteresis), and slash commands.
+--      lookahead, and target hysteresis), bundled Media/Icon & IconRound
+--      texture paths for in-game & WowUp UIs, and slash commands.
 --   2. Must tolerate missing optional addons (TomTom, OpenMap, Questie,
 --      ForeverLevelingBiS) and missing/partial GeneratedData safely.
 --   3. Keep all Lua compatible with WoW Forever 1.60.1 (Lua 5.1 semantics)
@@ -35,8 +36,10 @@ end
 addonName = addonName or "ForeverQuestPath"
 
 ns.name = addonName
-ns.version = "1.6.1"
+ns.version = "1.6.2"
 ns.PREFIX = "|cff33d9ffForeverQuestPath|r: "
+ns.ICON_TEXTURE = "Interface\\AddOns\\ForeverQuestPath\\Media\\Icon"
+ns.ICON_ROUND_TEXTURE = "Interface\\AddOns\\ForeverQuestPath\\Media\\IconRound"
 
 _G.ForeverQuestPath = ns
 

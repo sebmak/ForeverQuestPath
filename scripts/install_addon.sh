@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Rules for install_addon.sh:
 # - Validates ForeverQuestPath.toc & ForeverQuestPath_Forever.toc headers
-#   (## Interface: 16001, SavedVariables, and byte parity), bundled Media/Icon.png,
-#   manifest entries, and Lua syntax/bytecode before touching AddOns.
+#   (## Interface: 16001, SavedVariables, and byte parity), bundled
+#   Media/Icon.tga, Media/IconRound.tga, and Media/Icon.png textures, manifest
+#   entries, and Lua syntax/bytecode before touching AddOns.
 # - Syncs addon/ to the target WoW Forever AddOns directory with rsync --delete,
 #   refreshes the top-level AddOn directory timestamp for Finder/WowUp visibility,
 #   and verifies byte-for-byte parity afterward.
@@ -77,8 +78,8 @@ if ! cmp -s "${TOC_FILE}" "${FOREVER_TOC_FILE}"; then
     echo "ERROR: ${FOREVER_TOC_FILE} must match ${TOC_FILE} byte-for-byte" >&2
     exit 1
 fi
-if [[ ! -f "${ICON_FILE}" ]]; then
-    echo "ERROR: Missing bundled icon file at ${ICON_FILE}" >&2
+if [[ ! -f "${ADDON_SRC}/Media/Icon.tga" || ! -f "${ADDON_SRC}/Media/IconRound.tga" || ! -f "${ADDON_SRC}/Media/Icon.png" ]]; then
+    echo "ERROR: Missing required bundled icon textures under ${ADDON_SRC}/Media (Icon.tga, IconRound.tga, Icon.png)" >&2
     exit 1
 fi
 
@@ -279,8 +280,8 @@ if [[ ! -f "${ADDON_DEST}/ForeverQuestPath_Forever.toc" ]]; then
     echo "ERROR: Destination missing ForeverQuestPath_Forever.toc after sync" >&2
     exit 1
 fi
-if [[ ! -f "${ADDON_DEST}/Media/Icon.png" ]]; then
-    echo "ERROR: Destination missing Media/Icon.png after sync" >&2
+if [[ ! -f "${ADDON_DEST}/Media/Icon.tga" || ! -f "${ADDON_DEST}/Media/IconRound.tga" || ! -f "${ADDON_DEST}/Media/Icon.png" ]]; then
+    echo "ERROR: Destination missing Media/Icon.tga, IconRound.tga, or Icon.png after sync" >&2
     exit 1
 fi
 

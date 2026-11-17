@@ -19,13 +19,13 @@ from pathlib import Path
 # Rules for AddonReleasePackager:
 # 1. Version, title, notes, interface version, and manifest entries must be read
 #    directly from addon/ForeverQuestPath.toc and validated with
-#    scripts/install_addon.sh --check-only (including ForeverQuestPath_Forever.toc
-#    and Media/Icon.png) before packaging.
+#    scripts/install_addon.sh --check-only (including ForeverQuestPath_Forever.toc,
+#    Media/Icon.tga, Media/IconRound.tga, and Media/Icon.png) before packaging.
 # 2. The release ZIP must be named ForeverQuestPath-v<version>-forever.zip, wrap
 #    all addon files under ForeverQuestPath/ using POSIX forward slashes, and
 #    accompany dist/release.json (WowUp / BigWigs packager metadata) + .sha256.
-# 3. Every archive must pass zipfile integrity checks, manifest & WowUp asset
-#    membership checks, and clean temporary extraction checks.
+# 3. Every archive must pass zipfile integrity checks, manifest & WowUp/in-game
+#    icon membership checks, and clean temporary extraction checks.
 # 4. Optional GitHub release publishing must read HTTPS credentials in memory via
 #    `git credential fill` without printing secrets, sync best-effort repo
 #    metadata/topics, remove stale unsuffixed archives, and upload zip,
@@ -39,7 +39,7 @@ class AddonReleasePackager:
     ADDON_DIR = PROJECT_ROOT / "addon"
     TOC_PATH = ADDON_DIR / "ForeverQuestPath.toc"
     FOREVER_TOC_NAME = "ForeverQuestPath_Forever.toc"
-    ICON_REL_PATH = "Media/Icon.png"
+    ICON_REL_PATHS = ("Media/Icon.tga", "Media/IconRound.tga", "Media/Icon.png")
     INSTALL_SCRIPT = PROJECT_ROOT / "scripts" / "install_addon.sh"
     DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "dist"
     RELEASE_FLAVOR = "forever"
@@ -139,7 +139,8 @@ class AddonReleasePackager:
 
             names = zf.namelist()
             name_set = set(names)
-            for req_rel in ("ForeverQuestPath.toc", self.FOREVER_TOC_NAME, self.ICON_REL_PATH):
+            required_entries = ("ForeverQuestPath.toc", self.FOREVER_TOC_NAME, *self.ICON_REL_PATHS)
+            for req_rel in required_entries:
                 expected_entry = f"{self.ADDON_FOLDER_NAME}/{req_rel}"
                 if expected_entry not in name_set:
                     raise RuntimeError(f"Archive missing required entry: {expected_entry}")
@@ -156,7 +157,7 @@ class AddonReleasePackager:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 zf.extractall(tmp_dir)
                 extracted_root = Path(tmp_dir) / self.ADDON_FOLDER_NAME
-                for req_rel in ("ForeverQuestPath.toc", self.FOREVER_TOC_NAME, self.ICON_REL_PATH):
+                for req_rel in required_entries:
                     if not (extracted_root / req_rel).is_file():
                         raise RuntimeError(f"Extracted archive missing {req_rel}")
 

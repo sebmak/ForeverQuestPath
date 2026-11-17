@@ -1,7 +1,8 @@
 --------------------------------------------------------------------------------
 -- UI/Window.lua
 -- Rules:
---   1. Full Route (with synchronized Ready Turn-In, In-Dungeon instance
+--   1. Full Route (with bundled title-bar icon ns.ICON_TEXTURE, synchronized
+--      Ready Turn-In, In-Dungeon instance
 --      routing [DUNG] + active dungeon banner, & GPS location/friend-chain
 --      splicing, virtual-completion proactive full-chain expansion using zero-
 --      clone simCompleted / GetCompletedReadOnly(), [READY]/[DUNG]/[GPS]/
@@ -32,7 +33,7 @@
 --      routeScratch context/maps with LuaJIT table.clear-backed WipeMap +
 --      bulk-sync aware isCompFn and lazy lookBlocked allocation, unified
 --      inline TRAVEL lookahead plus vBlockedAccept cascade short-circuiting,
---      and playerHint forwarding from Window.Refresh -> RefreshRouteTab ->
+--      and playerHint forwarding from STATE_UPDATED -> Window.Refresh -> RefreshRouteTab ->
 --      ComputeRouteTabCache -> GetCurrentStep compatible with WoW Forever
 --      16001.
 --   3. Pooled Route, Dungeon & Unlock Chain, Special Reward, and Diagnostics
@@ -2858,10 +2859,10 @@ local function RefreshDiagTab()
     p.diagList:SetItems(diagTabCache.entries, true)
 end
 
-function Window.Refresh()
+function Window.Refresh(playerHint)
     if not frame or not frame:IsShown() then return end
 
-    local player = ns.State.GetPlayerInfo()
+    local player = playerHint or ns.State.GetPlayerInfo()
     local charTxt = string.format("Lv %d %s %s %s%s · %s",
         player.level,
         player.faction or "Alliance",
@@ -2944,8 +2945,16 @@ local function CreateWindowFrame()
     titleBar:SetHeight(HEADER_H)
     ApplyBackdrop(titleBar, 0.10, 0.13, 0.18, 1, 0.18, 0.24, 0.30, 1)
 
+    local titleIcon = titleBar:CreateTexture(nil, "ARTWORK")
+    titleIcon:SetSize(18, 18)
+    titleIcon:SetPoint("LEFT", 10, 0)
+    if ns.ICON_TEXTURE and titleIcon.SetTexture then
+        titleIcon:SetTexture(ns.ICON_TEXTURE)
+    end
+    frame.titleIcon = titleIcon
+
     local titleText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    titleText:SetPoint("LEFT", 12, 0)
+    titleText:SetPoint("LEFT", titleIcon, "RIGHT", 6, 0)
     titleText:SetText("|cff33d9ffForeverQuestPath|r  |cff888888v" .. ns.version .. "|r")
 
     local closeBtn = MakeButton(titleBar, "X", 22, 20)
@@ -3358,7 +3367,7 @@ function Window.Initialize()
     if CreateFrame and UIParent then
         CreateWindowFrame()
     end
-    ns.RegisterCallback("STATE_UPDATED", function(reason)
+    ns.RegisterCallback("STATE_UPDATED", function(reason, _, _, pInfo)
         if (not LOCATION_ONLY_REASONS[reason])
             and reason ~= "QUEST_ACCEPTED"
             and reason ~= "QUEST_TURNED_IN"
@@ -3366,6 +3375,6 @@ function Window.Initialize()
             and reason ~= "MAX_LEVEL_CHANGED" then
             routeStaticSeq = routeStaticSeq + 1
         end
-        Window.Refresh()
+        Window.Refresh(pInfo)
     end)
 end

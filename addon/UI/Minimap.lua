@@ -2,8 +2,8 @@
 -- UI/Minimap.lua
 -- Rules:
 --   1. Provides the draggable minimap launcher button (ForeverQuestPathMinimapButton)
---      and WoW Forever AddonCompartment callbacks using the bundled custom
---      Media/Icon.png emblem for quick HUD/Window/Pin access.
+--      and WoW Forever AddonCompartment callbacks using the circularly-masked
+--      bundled Media/IconRound texture for quick HUD/Window/Pin access.
 --   2. Respects ns.db.showMinimap and persists ns.db.minimapAngle cleanly.
 --   3. Safe no-op in headless Lua test harnesses where Minimap/GameTooltip/CreateFrame
 --      may be absent or partial.
@@ -14,7 +14,7 @@ local _, ns = ...
 local MinimapMod = {}
 ns.Minimap = MinimapMod
 
-local ICON_TEXTURE = "Interface\\AddOns\\ForeverQuestPath\\Media\\Icon.png"
+local ICON_TEXTURE = ns.ICON_ROUND_TEXTURE or "Interface\\AddOns\\ForeverQuestPath\\Media\\IconRound"
 local DEFAULT_ANGLE = 215
 local RADIUS_OFFSET = 5
 
@@ -186,7 +186,7 @@ function MinimapMod.Initialize()
     icon:SetSize(18, 18)
     icon:SetTexture(ICON_TEXTURE)
     if icon.SetTexCoord then
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        icon:SetTexCoord(0.04, 0.96, 0.04, 0.96)
     end
     icon:SetPoint("TOPLEFT", 7, -6)
     button.icon = icon

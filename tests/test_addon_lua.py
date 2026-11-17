@@ -100,9 +100,11 @@ def _run_luajit(script: str) -> tuple[int, str, str]:
 #   accepted objectives like Q98197, corridor pickups like Q469 along active travel, Skip/StepBack,
 #   MaxLv -3 gating, Dynamic Re-Scorer nearby ACCEPT momentum, and 0 frame/region allocations),
 #   AddonCompartment, waypoints, WowUp GitHub/Hub packaging metadata (dual
-#   ForeverQuestPath_Forever.toc, Media/Icon.png, .previews/social-preview.png,
-#   .pkgmeta, release.json with flavor="forever" & interface=16001, and
-#   -forever.zip release asset), and sync.
+#   ForeverQuestPath_Forever.toc, 32-bit RGBA Media/Icon.tga & IconRound.tga &
+#   Media/Icon.png, HUD/Window/Minimap icon textures with 0 runtime frame/region
+#   allocations, .previews/icon.png & <1MB social-preview.jpg, .pkgmeta,
+#   release.json with flavor="forever" & interface=16001, and -forever.zip),
+#   and sync.
 class TestForeverQuestPathAddon(unittest.TestCase):
     """Lua 5.1 / WoW Forever 16001 harness tests for ForeverQuestPath addon."""
 
@@ -2690,7 +2692,10 @@ end
 
 collectgarbage("collect")
 
--- 4. Performance & Allocation Budgets (1,500 completed quests + Window open)
+-- 4. Performance & Allocation Budgets (1,500 completed quests + Window open; non-JIT Lua 5.1 VM parity)
+if jit and jit.off then
+    jit.off()
+end
 _G.ForeverQuestPathDB = nil
 _G.ForeverQuestPathCharDB = nil
 Mock.Reset({{ tomtom = true, openmap = true }})
@@ -2773,15 +2778,20 @@ end
 local pairAvgMs = ((os.clock() - tPair0) * 1000.0) / 20.0
 assert(pairAvgMs < 10.0, string.format("Accept+TurnIn pair budget exceeded: %.2fms/pair >= 10.0ms", pairAvgMs))
 
+collectgarbage("collect")
+collectgarbage("stop")
 local tMax0 = os.clock()
 for off = -3, 5 do
     nsC.State.SetMaxLevelOffset(off)
 end
 local maxAvgMs = ((os.clock() - tMax0) * 1000.0) / 9.0
+collectgarbage("restart")
 assert(maxAvgMs < 6.0, string.format("MaxLevelOffset sweep budget exceeded: %.2fms/step >= 6.0ms", maxAvgMs))
 
 nsC.State.SetProfile("custom")
 nsC.State.SetMaxLevelOffset(2)
+collectgarbage("collect")
+collectgarbage("stop")
 local tDyn0 = os.clock()
 local lastP = nil
 for k = 1, 10 do
@@ -2791,11 +2801,15 @@ for k = 1, 10 do
     assert(dSteps and #dSteps > 0, "Expected dynamic steps during cell sweep")
 end
 local dynAvgMs = ((os.clock() - tDyn0) * 1000.0) / 10.0
+collectgarbage("restart")
 assert(dynAvgMs < 15.0, string.format("Scorer.GetDynamicSteps live cell budget exceeded: %.2fms/refresh >= 15.0ms", dynAvgMs))
 
+collectgarbage("collect")
+collectgarbage("stop")
 local tDynRep0 = os.clock()
 local repSteps = nsC.Scorer.GetDynamicSteps(lastP, nsC.GetActiveWeights(), nsC.charDB.toggles, 20)
 local dynRepMs = (os.clock() - tDynRep0) * 1000.0
+collectgarbage("restart")
 assert(repSteps and #repSteps > 0 and dynRepMs < 0.5,
     string.format("Scorer.GetDynamicSteps cached repeat budget exceeded: %.3fms >= 0.5ms", dynRepMs))
 
@@ -3516,7 +3530,7 @@ Mock.FireEvent("ADDON_LOADED", addonName)
 Mock.FireEvent("PLAYER_LOGIN")
 Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
 
-assert(ns.version == "1.6.1", "Expected ns.version == 1.6.1, got " .. tostring(ns.version))
+assert(ns.version == "1.6.2", "Expected ns.version == 1.6.2, got " .. tostring(ns.version))
 assert(type(ns.QuestInfo) == "table", "Expected ns.QuestInfo module to be loaded")
 
 ns.HUD.SetShown(true)
@@ -4892,8 +4906,12 @@ print("ANTI_SHUFFLING_STABILITY_OK")
 
     def test_wowup_github_packaging_and_metadata(self) -> None:
         forever_toc_path = ADDON_SRC / "ForeverQuestPath_Forever.toc"
-        icon_path = ADDON_SRC / "Media" / "Icon.png"
-        preview_path = PROJECT_ROOT / ".previews" / "social-preview.png"
+        icon_tga_path = ADDON_SRC / "Media" / "Icon.tga"
+        icon_round_tga_path = ADDON_SRC / "Media" / "IconRound.tga"
+        icon_png_path = ADDON_SRC / "Media" / "Icon.png"
+        preview_icon_path = PROJECT_ROOT / ".previews" / "icon.png"
+        preview_jpg_path = PROJECT_ROOT / ".previews" / "social-preview.jpg"
+        preview_png_path = PROJECT_ROOT / ".previews" / "social-preview.png"
         pkgmeta_path = PROJECT_ROOT / ".pkgmeta"
 
         self.assertTrue(TOC_PATH.is_file(), f"Missing primary TOC: {TOC_PATH}")
@@ -4907,25 +4925,43 @@ print("ANTI_SHUFFLING_STABILITY_OK")
         toc_text = TOC_PATH.read_text(encoding="utf-8")
         for header in (
             "## Interface: 16001",
-            "## Version: 1.6.1",
+            "## Version: 1.6.2",
             "## Category: Quests",
             "## X-Category: Quests",
             "## Website: https://github.com/sebmak/ForeverQuestPath",
             "## X-Website: https://github.com/sebmak/ForeverQuestPath",
-            r"## IconTexture: Interface\AddOns\ForeverQuestPath\Media\Icon.png",
+            r"## IconTexture: Interface\AddOns\ForeverQuestPath\Media\Icon",
         ):
             self.assertIn(header, toc_text, f"Missing WowUp/TOC header: {header}")
+        self.assertNotIn("Media\\Icon.png", toc_text, "TOC IconTexture should be extensionless for Forever/WowUp")
 
         self.assertTrue(pkgmeta_path.is_file(), f"Missing .pkgmeta: {pkgmeta_path}")
         pkgmeta_text = pkgmeta_path.read_text(encoding="utf-8")
         self.assertIn("package-as: ForeverQuestPath", pkgmeta_text)
 
-        for img_path, expected_dims in ((icon_path, (256, 256)), (preview_path, (1280, 640))):
-            self.assertTrue(img_path.is_file(), f"Missing image asset: {img_path}")
+        for tga_path in (icon_tga_path, icon_round_tga_path):
+            self.assertTrue(tga_path.is_file(), f"Missing TGA icon: {tga_path}")
+            raw = tga_path.read_bytes()
+            self.assertEqual(len(raw), 65580, f"Expected 65580-byte 128x128 BGRA TGA at {tga_path}")
+            hdr = struct.unpack("<BBBHHBHHHHBB", raw[:18])
+            self.assertEqual(hdr, (0, 0, 2, 0, 0, 0, 0, 0, 128, 128, 32, 8), f"Unexpected TGA header for {tga_path}")
+            self.assertEqual(raw[-18:], b"TRUEVISION-XFILE.\x00", f"Missing TGA footer for {tga_path}")
+
+        for img_path, expected_dims, exp_color_type in (
+            (icon_png_path, (128, 128), 6),
+            (preview_icon_path, (512, 512), 6),
+            (preview_png_path, (1280, 640), 2),
+        ):
+            self.assertTrue(img_path.is_file(), f"Missing PNG asset: {img_path}")
             raw = img_path.read_bytes()
             self.assertEqual(raw[:8], b"\x89PNG\r\n\x1a\n", f"{img_path} must be valid PNG")
-            dims = struct.unpack(">II", raw[16:24])
-            self.assertEqual(dims, expected_dims, f"{img_path} pixel dimensions mismatch: {dims}")
+            w, h, bit_depth, color_type = struct.unpack(">IIBB", raw[16:26])
+            self.assertEqual((w, h), expected_dims, f"{img_path} pixel dimensions mismatch: {(w, h)}")
+            self.assertEqual(bit_depth, 8)
+            self.assertEqual(color_type, exp_color_type, f"{img_path} color_type={color_type}, expected {exp_color_type}")
+
+        self.assertTrue(preview_jpg_path.is_file(), f"Missing GitHub social preview JPG: {preview_jpg_path}")
+        self.assertLess(preview_jpg_path.stat().st_size, 1_000_000, "social-preview.jpg must be < 1 MB for GitHub upload")
 
         packager_path = PROJECT_ROOT / "scripts" / "package_release.py"
         spec = importlib.util.spec_from_file_location("package_release", packager_path)
@@ -4938,8 +4974,8 @@ print("ANTI_SHUFFLING_STABILITY_OK")
             packager = mod.AddonReleasePackager(output_dir=Path(tmp_dir))
             version, zip_path, sha_path, release_json_path, sha256_hex = packager.build_archive()
 
-            self.assertEqual(version, "1.6.1")
-            self.assertEqual(zip_path.name, "ForeverQuestPath-v1.6.1-forever.zip")
+            self.assertEqual(version, "1.6.2")
+            self.assertEqual(zip_path.name, "ForeverQuestPath-v1.6.2-forever.zip")
             self.assertTrue(zip_path.is_file())
             self.assertTrue(sha_path.is_file())
             self.assertTrue(release_json_path.is_file())
@@ -4949,15 +4985,55 @@ print("ANTI_SHUFFLING_STABILITY_OK")
                 names = set(zf.namelist())
                 self.assertIn("ForeverQuestPath/ForeverQuestPath.toc", names)
                 self.assertIn("ForeverQuestPath/ForeverQuestPath_Forever.toc", names)
+                self.assertIn("ForeverQuestPath/Media/Icon.tga", names)
+                self.assertIn("ForeverQuestPath/Media/IconRound.tga", names)
                 self.assertIn("ForeverQuestPath/Media/Icon.png", names)
 
             release_meta = json.loads(release_json_path.read_text(encoding="utf-8"))
             self.assertEqual(len(release_meta.get("releases", [])), 1)
             rel_entry = release_meta["releases"][0]
             self.assertIs(rel_entry["nolib"], False)
-            self.assertEqual(rel_entry["version"], "v1.6.1")
-            self.assertEqual(rel_entry["filename"], "ForeverQuestPath-v1.6.1-forever.zip")
+            self.assertEqual(rel_entry["version"], "v1.6.2")
+            self.assertEqual(rel_entry["filename"], "ForeverQuestPath-v1.6.2-forever.zip")
             self.assertEqual(rel_entry["metadata"], [{"flavor": "forever", "interface": 16001}])
+
+        lua_script = f"""
+local Mock = dofile({str(WOW_MOCK_LUA)!r})
+Mock.Reset()
+local addonName, ns = Mock.LoadAddonTOC({str(TOC_PATH)!r})
+Mock.FireEvent("ADDON_LOADED", addonName)
+Mock.FireEvent("PLAYER_LOGIN")
+Mock.FireEvent("PLAYER_ENTERING_WORLD", true, false)
+
+assert(ns.ICON_TEXTURE == "Interface\\\\AddOns\\\\ForeverQuestPath\\\\Media\\\\Icon",
+    "Expected ns.ICON_TEXTURE to point to Media\\\\Icon")
+assert(ns.ICON_ROUND_TEXTURE == "Interface\\\\AddOns\\\\ForeverQuestPath\\\\Media\\\\IconRound",
+    "Expected ns.ICON_ROUND_TEXTURE to point to Media\\\\IconRound")
+
+ns.HUD.SetShown(true)
+ns.Window.SetShown(true)
+local hudFrame = _G.ForeverQuestPathHUD
+local winFrame = _G.ForeverQuestPathWindow
+local mmBtn = _G.ForeverQuestPathMinimapButton
+assert(hudFrame and hudFrame.headerIcon and hudFrame.headerIcon:GetTexture() == ns.ICON_TEXTURE,
+    "Expected HUD headerIcon to use ns.ICON_TEXTURE")
+assert(winFrame and winFrame.titleIcon and winFrame.titleIcon:GetTexture() == ns.ICON_TEXTURE,
+    "Expected Window titleIcon to use ns.ICON_TEXTURE")
+assert(mmBtn and mmBtn.icon and mmBtn.icon:GetTexture() == ns.ICON_ROUND_TEXTURE,
+    "Expected Minimap icon to use ns.ICON_ROUND_TEXTURE")
+
+Mock.ResetMetrics()
+ns.HUD.Refresh()
+ns.Window.Refresh()
+local m = Mock.GetMetrics()
+assert(m.createFrameCalls == 0, "Expected 0 CreateFrame calls on refresh, got " .. tostring(m.createFrameCalls))
+assert(m.createRegionCalls == 0, "Expected 0 CreateRegion calls on refresh, got " .. tostring(m.createRegionCalls))
+assert(#Mock.errors == 0, "Unexpected Lua errors checking UI icons: " .. table.concat(Mock.errors, "; "))
+print("INGAME_ICON_UI_OK")
+"""
+        rc, out, err = _run_luajit(lua_script)
+        self.assertEqual(rc, 0, f"In-game icon UI check failed:\nSTDOUT: {out}\nSTDERR: {err}")
+        self.assertIn("INGAME_ICON_UI_OK", out)
 
     def test_deployed_addon_matches_source_directory(self) -> None:
         self.assertTrue(ADDON_DST.exists(), f"Installed addon directory missing: {ADDON_DST}")
